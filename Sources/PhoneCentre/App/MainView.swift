@@ -196,10 +196,14 @@ struct MainView: View {
 
 struct DeviceRow: View {
     let device: Device
+    /// 選中時列底色是強調色（increased），圖示與狀態燈要換色才不會和底色糊在一起
+    @Environment(\.backgroundProminence) private var prominence
+    private var selected: Bool { prominence == .increased }
+
     var body: some View {
         HStack {
             Image(systemName: device.symbolName).frame(width: 22)
-                .foregroundStyle(device.isOnline ? Color.accentColor : .secondary)
+                .foregroundStyle(selected ? Color.white : device.isOnline ? Color.accentColor : .secondary)
             VStack(alignment: .leading) {
                 Text(device.displayName)
                 Text(device.isOnline ? (device.isWireless ? device.serial : device.subtitle) : device.stateDescription)
@@ -207,6 +211,7 @@ struct DeviceRow: View {
             }
             Spacer()
             Circle().fill(device.isOnline ? .green : .orange).frame(width: 7, height: 7)
+                .overlay { if selected { Circle().stroke(.white, lineWidth: 1.5).frame(width: 10, height: 10) } }
         }
         .contextMenu {
             if device.isOnline {

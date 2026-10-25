@@ -73,7 +73,7 @@ Sources/PhoneCentre/           Swift 原始碼（下面各章節；PhoneData 為
 
 ### MainView.swift
 主視窗：標準的 `NavigationSplitView`，分頁是放在工具列的原生分段選擇器；用最新 SDK 連結後由系統自動套用 Liquid Glass（圓角視窗、側邊欄、工具列按鈕、分頁藥丸）。視窗透明，最底層墊一層 `NSVisualEffectView`（`.underWindowBackground`）當毛玻璃底，SwiftUI 內容不加自訂底色。
-- 側邊欄：本機裝置、記住但目前離線的無線裝置（右鍵可立即重連或忘記）、各遠端 PhoneCentre 的裝置（每區標題有連線狀態燈與選單：重新連線、編輯、移除；沒有裝置時顯示狀態與「重新連線」按鈕）；底部顯示 adb server 狀態與最近事件。
+- 側邊欄：本機裝置（選中的列底色是強調色，`DeviceRow` 依 `backgroundProminence` 把圖示改白、狀態燈外加白色細環，避免和底色糊在一起）、記住但目前離線的無線裝置（右鍵可立即重連或忘記）、各遠端 PhoneCentre 的裝置（每區標題有連線狀態燈與選單：重新連線、編輯、移除；沒有裝置時顯示狀態與「重新連線」按鈕）；底部顯示 adb server 狀態與最近事件。
 - 內容：分頁「總覽／啟動台／檔案／通知／簡訊／通話記錄／相機膠卷」；找不到 adb 時顯示 `AdbSetupView`（一鍵下載 Google Platform-Tools）。
 
 ### AddDeviceSheet.swift
