@@ -309,6 +309,10 @@ struct SideColumn: View {
                         navKeys.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { keysH = $0 }
                     }
                     .padding(.vertical, 6).liquidPanel()
+                    // App 已關閉（獨立視窗）：導覽列全部反灰、不能按
+                    .disabled(model.appClosed)
+                    .opacity(model.appClosed ? 0.4 : 1)
+                    .animation(.easeInOut(duration: 0.2), value: model.appClosed)
                   }
                   .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
                 }
@@ -370,8 +374,11 @@ struct SideColumn: View {
                         MiniLauncher(catalog: catalog) { pkg in showLauncher = false; model.launch(pkg) }
                     }
             }
-            NavButton(help: location.isActive(model.device) ? "模擬定位（模擬中）" : "模擬定位") { showLocation = true } icon: {
-                sfIcon(location.isActive(model.device) ? "location.slash.fill" : "location")
+            // 獨立視窗（單一 App）不需要模擬定位，只有主螢幕與桌面模式有
+            if !model.isAppWindow {
+                NavButton(help: location.isActive(model.device) ? "模擬定位（模擬中）" : "模擬定位") { showLocation = true } icon: {
+                    sfIcon(location.isActive(model.device) ? "location.slash.fill" : "location")
+                }
             }
             NavButton(help: "聲音") { showSound.toggle() } icon: { sfIcon("speaker.wave.2") }
                 .popover(isPresented: $showSound) { SoundPopover(model: model) }

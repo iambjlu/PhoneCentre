@@ -88,14 +88,14 @@ struct MirrorContentView: View {
             .glassCard(cornerRadius: 18)
         }
         if model.appClosed, model.statusText == nil, let pkg = model.appPackage {
-            // 最後一幀霧化當背景
+            // 整個畫面區毛玻璃：最後一幀霧化當底，上面再蓋一層毛玻璃（App 不支援橫向時兩側的黑邊也一起霧化）
             if let snap = model.closedSnapshot {
                 Image(nsImage: snap).resizable().scaledToFill()
-                    .blur(radius: 8)
-                    .overlay(Rectangle().fill(Color.black.opacity(0.25)))
+                    .blur(radius: 14)
                     .clipped()
                     .allowsHitTesting(false)
             }
+            Rectangle().fill(.regularMaterial).allowsHitTesting(false)
             VStack(spacing: 12) {
                 AppIconView(catalog: catalog, package: pkg, size: 56).opacity(0.9)
                 Text("\(model.appLabel ?? catalog.label(for: pkg)) 已關閉")
