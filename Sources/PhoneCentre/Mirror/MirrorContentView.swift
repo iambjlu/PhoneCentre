@@ -87,7 +87,7 @@ struct MirrorContentView: View {
                 }
                 .padding(10)
                 .glassCard(cornerRadius: 12)
-                .padding(.top, 10)
+                .padding(.top, 44)   // 往下一點，不要擋住手機的狀態列
             }
             Spacer()
             if !model.markedText.isEmpty {
