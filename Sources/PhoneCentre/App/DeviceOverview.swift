@@ -190,7 +190,11 @@ struct PinnedAppsStrip: View {
     @ObservedObject var catalog: AppCatalog
     @ObservedObject private var settings = AppSettings.shared
 
-    private var pins: [String] { settings.pinned(for: device) }
+    /// 已開啟的喜好項目排前面，還沒開的接在後面
+    private var pins: [String] {
+        let p = settings.pinned(for: device)
+        return p.filter { catalog.running.contains($0) } + p.filter { !catalog.running.contains($0) }
+    }
     private var openOnly: [String] { catalog.running.filter { !pins.contains($0) } }
 
     var body: some View {
@@ -200,7 +204,11 @@ struct PinnedAppsStrip: View {
         }
         .task(id: device.id) {
             if catalog.apps.isEmpty { await catalog.reload() }
-            await catalog.refreshTasks()
+            // 定時更新，已開啟與「目前在用」的標記才會跟著手機變
+            while !Task.isCancelled {
+                await catalog.refreshTasks()
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+            }
         }
     }
 

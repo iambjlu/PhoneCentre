@@ -35,7 +35,11 @@ struct LaunchpadView: View {
     @State private var query = ""
     @State private var confirmUninstall: AppEntry?
 
-    private var pins: [String] { settings.pinned(for: device) }
+    /// 已開啟的喜好項目排前面，還沒開的接在後面
+    private var pins: [String] {
+        let p = settings.pinned(for: device)
+        return p.filter { catalog.running.contains($0) } + p.filter { !catalog.running.contains($0) }
+    }
 
     private func entries(_ pkgs: [String]) -> [AppEntry] {
         pkgs.compactMap { p in catalog.apps.first { $0.package == p } }
@@ -84,7 +88,11 @@ struct LaunchpadView: View {
         }
         .task(id: device.id) {
             if catalog.apps.isEmpty { await catalog.reload() }
-            await catalog.refreshTasks()
+            // 定時更新，已開啟與「目前在用」的標記才會跟著手機變
+            while !Task.isCancelled {
+                await catalog.refreshTasks()
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+            }
         }
         .alert("解除安裝「\(confirmUninstall?.label ?? "")」？", isPresented: Binding(get: { confirmUninstall != nil }, set: { if !$0 { confirmUninstall = nil } })) {
             Button("解除安裝", role: .destructive) {
