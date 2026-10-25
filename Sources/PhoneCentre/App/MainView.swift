@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 enum DeviceTab: String, CaseIterable, Identifiable {
@@ -128,6 +129,8 @@ struct MainView: View {
             }
         }
         .padding(10)
+        .glassShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .padding(8)
     }
 
     private var serverColor: Color {
@@ -163,6 +166,8 @@ struct MainView: View {
                     .pickerStyle(.segmented)
                     .labelsHidden()
                     .frame(maxWidth: 480)
+                    .padding(6)
+                    .glassShape(Capsule())
                     .padding(10)
                     Divider()
                     switch tab {
@@ -247,4 +252,27 @@ struct AdbSetupView: View {
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+}
+
+extension View {
+    /// 視窗底部是毛玻璃（桌面透出來）；macOS 15 以上用 containerBackground
+    @ViewBuilder func windowGlassBackground() -> some View {
+        if #available(macOS 15.0, *) {
+            self.containerBackground(for: .window) { WindowBlur() }
+        } else {
+            self
+        }
+    }
+}
+
+/// 視窗後面桌面的模糊（真正的毛玻璃，不是半透明）
+struct WindowBlur: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let v = NSVisualEffectView()
+        v.material = .underWindowBackground
+        v.blendingMode = .behindWindow
+        v.state = .active
+        return v
+    }
+    func updateNSView(_ v: NSVisualEffectView, context: Context) {}
 }

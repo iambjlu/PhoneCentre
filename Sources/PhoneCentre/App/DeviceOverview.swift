@@ -32,7 +32,8 @@ struct DeviceOverview: View {
                     BigButton("解鎖密碼…", "touchid") { showPassword = true }
                 }
 
-                GroupBox("裝置資訊") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("裝置資訊").font(.headline)
                     VStack(alignment: .leading, spacing: 6) {
                         row("型號", device.info.map { "\($0.manufacturer) \($0.model)" } ?? device.model)
                         row("Android", device.info.map { "\($0.androidVersion)（API \($0.sdk)）" } ?? "—")
@@ -48,8 +49,10 @@ struct DeviceOverview: View {
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(4)
                 }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .glassShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
 
                 RoundedRectangle(cornerRadius: 12)
                     .strokeBorder(style: StrokeStyle(lineWidth: 2, dash: [6]))
@@ -166,7 +169,7 @@ struct BigButton: View {
             }
             .frame(width: 110, height: 70)
         }
-        .buttonStyle(.bordered)
+        .glassButtonStyle()
     }
 }
 

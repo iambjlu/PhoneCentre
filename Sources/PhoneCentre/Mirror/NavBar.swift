@@ -13,6 +13,20 @@ extension View {
         }
     }
 
+    /// 主視窗的玻璃按鈕（舊系統退回一般的框線按鈕）
+    @ViewBuilder func glassButtonStyle() -> some View {
+        if #available(macOS 26.0, *) { self.buttonStyle(.glass) } else { self.buttonStyle(.bordered) }
+    }
+
+    /// 任意形狀的液態玻璃底（舊系統用材質）
+    @ViewBuilder func glassShape<S: Shape>(_ shape: S, interactive: Bool = false) -> some View {
+        if #available(macOS 26.0, *) {
+            self.glassEffect(interactive ? .regular.interactive() : .regular, in: shape)
+        } else {
+            self.background(.regularMaterial, in: shape)
+        }
+    }
+
     /// 毛玻璃底上疊的液態玻璃面板（App 列、導覽列各一塊）
     @ViewBuilder func liquidPanel(cornerRadius: CGFloat = 22) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)

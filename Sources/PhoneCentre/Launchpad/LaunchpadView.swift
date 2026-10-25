@@ -39,7 +39,7 @@ struct LaunchpadView: View {
                     TextField("搜尋", text: $query).textFieldStyle(.plain)
                 }
                 .padding(.horizontal, 10).padding(.vertical, 6)
-                .background(.quaternary, in: Capsule())
+                .glassShape(Capsule())
                 .frame(width: 240)
                 Button { Task { await catalog.reload() } } label: { Image(systemName: "arrow.clockwise") }
                     .help("重新整理")
