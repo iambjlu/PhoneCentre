@@ -45,6 +45,7 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
         model.onFrameSize = { [weak self] size in self?.fit(to: size) }
         model.onRotateWindow = { [weak self] in self?.rotateWindow() }
         model.onCloseWindow = { [weak self] in self?.window?.performClose(nil) }
+        model.onHideWindow = { [weak self] in self?.window?.orderOut(nil) }
         // App 名稱載入後更新標題
         model.catalog.$apps
             .receive(on: DispatchQueue.main)

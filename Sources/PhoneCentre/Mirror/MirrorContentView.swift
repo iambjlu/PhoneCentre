@@ -9,7 +9,7 @@ struct MirrorViewRepresentable: NSViewRepresentable {
 
 enum MirrorLayout {
     /// 右側欄（狀態指示、App 列、導覽列）寬度；視窗上方沒有工具列
-    static let railWidth: CGFloat = 64
+    static let railWidth: CGFloat = 80
     static let toolbarHeight: CGFloat = 0
     static let minContentHeight: CGFloat = 560
 }
@@ -36,7 +36,6 @@ struct MirrorContentView: View {
                 // 截圖：先全白再淡出
                 Color.white.opacity(model.flashOpacity).allowsHitTesting(false)
             }
-            Divider()
             SideColumn(model: model, catalog: catalog, showVideoSettings: $showVideoSettings, showLocation: $showLocation)
                 .frame(width: MirrorLayout.railWidth)
         }

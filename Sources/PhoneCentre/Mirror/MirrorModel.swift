@@ -31,6 +31,8 @@ final class MirrorModel: ObservableObject {
     @Published var flashOpacity = 0.0
     /// 由視窗控制器提供：關閉這個視窗
     var onCloseWindow: (() -> Void)?
+    /// 由視窗控制器提供：隱藏這個視窗（連線與虛擬顯示器繼續，App 還在原本的顯示器上）
+    var onHideWindow: (() -> Void)?
     /// 獨立視窗的 App 在手機上被關掉了（例如在主螢幕滑掉）
     @Published var appClosed = false
     private var appSeen = false
@@ -219,6 +221,7 @@ final class MirrorModel: ObservableObject {
         if let old, let d = old.display { Self.claimedDisplays.remove(d) }
         if let mine { Self.claimedDisplays.insert(mine) }
         displayId = mine
+        if old == nil, let app = appPackage, let mine { Task { await ensureAppOnDisplay(app, display: mine) } }
         guard let old else { return }
         retiring = nil
         if let from = old.display, let to = mine {
@@ -230,6 +233,32 @@ final class MirrorModel: ObservableObject {
         }
         try? await Task.sleep(nanoseconds: 400_000_000)
         old.session.stop()
+    }
+
+    /// 啟動後確認 App 真的在這個顯示器上。App 已經在主螢幕（或別的顯示器）執行時，
+    /// 啟動指令可能只是把原本的 task 叫到前面，這邊的畫面會一直是黑的：找到那個 task 搬過來。
+    private func ensureAppOnDisplay(_ pkg: String, display: Int) async {
+        for _ in 0..<3 {
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            guard retiring == nil, !userStopped, displayId == display else { return }
+            if !(await rootTasks(onDisplay: display)).isEmpty { return }
+            let out = (try? await device.client.shell("am stack list | grep -E '^RootTask id=|taskId='", timeout: 10)) ?? ""
+            var root: Int?, rootDisplay: Int?
+            var found: Int?
+            for line in out.split(separator: "\n") {
+                if line.hasPrefix("RootTask id=") {
+                    root = Self.firstInt(in: line, after: "RootTask id=")
+                    rootDisplay = Self.firstInt(in: line, after: "displayId=")
+                } else if line.contains("taskId="), line.contains(": \(pkg)/"), let root, rootDisplay != display {
+                    found = root
+                }
+            }
+            if let found {
+                _ = try? await device.client.shell("am display move-stack \(found) \(display)")
+            } else {
+                session?.send(.startApp(pkg))
+            }
+        }
     }
 
     /// 關閉虛擬顯示器視窗前：把顯示器上的 App 搬到主螢幕後立刻把主螢幕原本的畫面拉回最上層，
@@ -460,7 +489,7 @@ final class MirrorModel: ObservableObject {
     /// 主畫面：主螢幕鏡像是 Home；獨立視窗＝關閉視窗（App 留在背景）；桌面模式送 Home 到該顯示器
     func navHome() {
         guard isVirtualDisplay else { key(KeyMap.home); return }
-        if isAppWindow { closeWindow() }
+        if isAppWindow { onHideWindow?() }
         else if let d = displayId { inputKey(KeyMap.home, display: d) }
     }
 
@@ -470,6 +499,7 @@ final class MirrorModel: ObservableObject {
     }
 
     func closeWindow() { onCloseWindow?() }
+    func hideWindow() { onHideWindow?() }
 
     /// 強制停止 App 並關閉視窗
     func forceStopAndClose() {

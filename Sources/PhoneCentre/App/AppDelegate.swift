@@ -30,7 +30,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !ChildMode.isChild, !flag { showMainWindow() }
+        if ChildMode.isChild {
+            // 獨立視窗被「隱藏」後，點 Dock 圖示就叫回來
+            for wc in WindowManager.shared.open.values { wc.window?.makeKeyAndOrderFront(nil) }
+        } else if !flag {
+            showMainWindow()
+        }
         return true
     }
 

@@ -3,19 +3,6 @@ import SwiftUI
 
 // MARK: 毛玻璃
 
-/// 深色毛玻璃底（視窗後面的桌面會透出來）
-struct GlassBackground: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let v = NSVisualEffectView()
-        v.material = .hudWindow
-        v.blendingMode = .behindWindow
-        v.state = .active
-        v.appearance = NSAppearance(named: .vibrantDark)
-        return v
-    }
-    func updateNSView(_ v: NSVisualEffectView, context: Context) {}
-}
-
 extension View {
     /// 疊在畫面上的東西統一用毛玻璃當底：新系統用液態玻璃，舊系統用材質
     @ViewBuilder func glassCard(cornerRadius: CGFloat = 12) -> some View {
@@ -26,75 +13,89 @@ extension View {
         }
     }
 
-    /// 側欄背景：深色毛玻璃（液態玻璃）
+    /// 右側欄：浮在視窗邊緣的圓角液態玻璃面板
     @ViewBuilder func glassColumn() -> some View {
+        let shape = RoundedRectangle(cornerRadius: 26, style: .continuous)
         if #available(macOS 26.0, *) {
-            self.background { GlassBackground() }
-                .glassEffect(.regular.tint(.black.opacity(0.25)), in: Rectangle())
+            self.clipShape(shape).glassEffect(.regular, in: shape)
         } else {
-            self.background { GlassBackground() }
+            self.clipShape(shape).background(.ultraThinMaterial, in: shape)
         }
     }
 }
 
 // MARK: 狀態指示
 
-/// 類似新版 iPhone 的狀態指示：外環＝電池，中間＝Wi-Fi 或行動網路世代，下方＝主要 SIM 卡訊號格
+/// 類似新版 iPhone 的狀態指示：外環＝電池（左右兩段，上方留給數字），中間＝Wi-Fi 或行動網路世代，
+/// 下方的點＝主要 SIM 卡訊號格（跟電池環分開）
 struct StatusIndicator: View {
     let status: DeviceStatus
-    var size: CGFloat = 30
+    var size: CGFloat = 38
 
     private var level: Double { status.batteryLevel < 0 ? 0 : Double(status.batteryLevel) / 100 }
     private var ringColor: Color {
         if status.charging { return .green }
         if status.batteryLevel >= 0 && status.batteryLevel <= 20 { return .red }
-        return Color.white.opacity(0.75)
+        return .white
     }
+
+    // 角度：SwiftUI 由 3 點鐘方向順時針量起（270° = 正上方，90° = 正下方）
+    private let segments: [(Double, Double)] = [(145, 250), (290, 395)]
 
     var body: some View {
         ZStack {
-            // 缺口在下方的 270° 圓環，從左下開始順時針
-            Circle().trim(from: 0, to: 0.75)
-                .stroke(Color.white.opacity(0.18), style: StrokeStyle(lineWidth: 2.6, lineCap: .round))
-                .rotationEffect(.degrees(135))
-            Circle().trim(from: 0, to: 0.75 * level)
-                .stroke(ringColor, style: StrokeStyle(lineWidth: 2.6, lineCap: .round))
-                .rotationEffect(.degrees(135))
-            // 電量百分比放在環上方（原本閃電的位置）
+            Canvas { ctx, sz in
+                let c = CGPoint(x: sz.width / 2, y: sz.height / 2)
+                let r = min(sz.width, sz.height) / 2 - 2
+                func arc(_ from: Double, _ to: Double) -> Path {
+                    var p = Path()
+                    p.addArc(center: c, radius: r, startAngle: .degrees(from), endAngle: .degrees(to), clockwise: false)
+                    return p
+                }
+                let style = StrokeStyle(lineWidth: 3.2, lineCap: .round)
+                for seg in segments { ctx.stroke(arc(seg.0, seg.1), with: .color(.white.opacity(0.22)), style: style) }
+                // 電量依序填滿兩段（左段先、右段後）
+                let total = segments.reduce(0) { $0 + ($1.1 - $1.0) }
+                var remain = total * level
+                for seg in segments where remain > 0 {
+                    let len = min(remain, seg.1 - seg.0)
+                    ctx.stroke(arc(seg.0, seg.0 + len), with: .color(ringColor), style: style)
+                    remain -= len
+                }
+            }
             if status.batteryLevel >= 0 {
-                Text("\(status.batteryLevel)%")
-                    .font(.system(size: 7.5, weight: .bold, design: .rounded)).monospacedDigit()
-                    .foregroundStyle(status.charging ? Color.green : Color.white.opacity(0.9))
-                    .padding(.horizontal, 2)
-                    .background(Capsule().fill(Color.black.opacity(0.55)))
-                    .offset(y: -size / 2)
+                Text("\(status.batteryLevel)")
+                    .font(.system(size: 12, weight: .bold, design: .rounded)).monospacedDigit()
+                    .foregroundStyle(status.charging ? Color.green : Color.white)
+                    .offset(y: -size / 2 - 1)
             }
             center.offset(y: -size * 0.02)
             if status.hasSim {
-                // 訊號格沿著外環的圓弧排在缺口裡，跟電池環接成一個圓
-                let r = size / 2 - 1.3
+                // 訊號格：在 Wi-Fi 下方，排成微彎的一排（兩端略高）
+                let r = size * 0.47
                 ForEach(0..<4, id: \.self) { i in
-                    let a = Angle.degrees(122 - Double(i) * 21.3).radians
-                    Circle().fill(Color.white.opacity(i < status.signalBars ? 0.95 : 0.25))
-                        .frame(width: 3, height: 3)
-                        .offset(x: r * CGFloat(cos(a)), y: r * CGFloat(sin(a)))
+                    let phi = [-0.62, -0.2, 0.2, 0.62][i]
+                    Circle().fill(Color.white.opacity(i < status.signalBars ? 1 : 0.28))
+                        .frame(width: 3.6, height: 3.6)
+                        .offset(x: r * CGFloat(sin(phi)), y: r * CGFloat(cos(phi)) - 1)
                 }
             }
         }
         .frame(width: size, height: size)
-        .padding(.top, 6)
+        .padding(.top, 22)
+        .padding(.bottom, 4)
         .help(status.summary)
     }
 
     @ViewBuilder private var center: some View {
         if status.wifi {
             Image(systemName: "wifi", variableValue: Double(status.wifiLevel) / 4)
-                .font(.system(size: size * 0.34, weight: .semibold))
+                .font(.system(size: size * 0.46, weight: .semibold))
                 .foregroundStyle(.white)
         } else if let t = status.cellularTech {
-            Text(t).font(.system(size: size * 0.3, weight: .bold, design: .rounded)).foregroundStyle(.white)
+            Text(t).font(.system(size: size * 0.38, weight: .bold, design: .rounded)).foregroundStyle(.white)
         } else {
-            Image(systemName: "wifi.slash").font(.system(size: size * 0.3, weight: .semibold)).foregroundStyle(.white.opacity(0.5))
+            Image(systemName: "wifi.slash").font(.system(size: size * 0.4, weight: .semibold)).foregroundStyle(.white.opacity(0.5))
         }
     }
 }
@@ -243,6 +244,8 @@ struct SideColumn: View {
         }
         .environment(\.colorScheme, .dark)
         .glassColumn()
+        .padding(.vertical, 8)
+        .padding(.horizontal, 8)
     }
 
     private var navBar: some View {
@@ -304,10 +307,10 @@ struct SideColumn: View {
         }
     }
 
-    /// 獨立視窗：關閉視窗（App 留在背景）；桌面模式：該桌面的 Home；主螢幕：手機 Home
+    /// 獨立視窗：隱藏視窗；桌面模式：該桌面的 Home；主螢幕：手機 Home
     @ViewBuilder private var homeButton: some View {
         if model.isAppWindow {
-            NavButton(help: "關閉視窗（App 繼續在背景執行）") { model.closeWindow() } icon: { sfIcon("xmark.square") }
+            NavButton(help: "隱藏視窗（App 留在虛擬顯示器上繼續執行；再從 App 列開啟或點 Dock 圖示叫回來）") { model.hideWindow() } icon: { sfIcon("xmark.square") }
         } else {
             NavButton(help: model.isVirtualDisplay ? "桌面 Home" : "主畫面（中鍵）") { model.navHome() } icon: { SamsungNavIcon.Home() }
         }
