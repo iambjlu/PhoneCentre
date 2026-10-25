@@ -81,6 +81,7 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
         super.init(window: window)
         window.delegate = self
         updateMinSize()
+        clampToMin()
         model.onFrameSize = { [weak self] size in self?.fit(to: size) }
         model.onRotateWindow = { [weak self] in self?.rotateWindow() }
         model.onCloseWindow = { [weak self] in self?.window?.performClose(nil) }
@@ -172,7 +173,26 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowDidResize(_ notification: Notification) {
-        MainActor.assumeIsolated { updateMinSize() }
+        MainActor.assumeIsolated {
+            updateMinSize()
+            clampToMin()
+        }
+    }
+
+    private var clamping = false
+
+    /// 視窗比最小大小還小就放大（從上次記住的大小還原、程式設定大小時不會自動套用最小值）。
+    /// 獨立視窗與主螢幕鏡像用同一組最小大小；左上角不動。
+    @MainActor
+    private func clampToMin() {
+        guard let window, !clamping else { return }
+        let f = window.frame
+        let minF = minFrameSize(landscape: isLandscape(frame: f.size))
+        guard f.width < minF.width - 0.5 || f.height < minF.height - 0.5 else { return }
+        clamping = true
+        defer { clamping = false }
+        let size = NSSize(width: max(f.width, minF.width), height: max(f.height, minF.height))
+        window.setFrame(NSRect(x: f.minX, y: f.maxY - size.height, width: size.width, height: size.height), display: true)
     }
 
     /// 主螢幕鏡像：縮放時維持影像比例；虛擬顯示器：自由調整；兩者都不能小於最小大小

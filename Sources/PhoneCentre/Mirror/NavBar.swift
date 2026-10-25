@@ -267,6 +267,7 @@ struct SideColumn: View {
     var horizontal = false
     @State private var showLauncher = false
     @State private var showSound = false
+    @State private var barWidth: CGFloat = 0
     // 右側欄分配空間用的量測（高度）
     @State private var currentH: CGFloat = 0
     @State private var othersNatural: CGFloat = 0
@@ -289,15 +290,25 @@ struct SideColumn: View {
             glassGroup {
                 HStack(spacing: 8) {
                     if model.isAppWindow, let pkg = model.appPackage {
-                        AppIconView(catalog: catalog, package: pkg, size: 34)
-                            .padding(.horizontal, 8).padding(.vertical, 4).liquidPanel()
+                        HStack(spacing: 8) {
+                            AppIconView(catalog: catalog, package: pkg, size: 34)
+                            if barWidth > 900 {
+                                Text(model.appLabel ?? catalog.label(for: pkg)).font(.system(size: 12, weight: .medium))
+                                    .lineLimit(1).frame(maxWidth: 140, alignment: .leading)
+                                    .foregroundStyle(.white.opacity(0.9))
+                            }
+                        }
+                        .padding(.horizontal, 8).padding(.vertical, 4).liquidPanel()
                     } else {
-                        AppRail(catalog: catalog, part: .current, horizontal: true) { pkg in model.launch(pkg) }
+                        AppRail(catalog: catalog, part: .current, horizontal: true, showName: barWidth > 900) { pkg in model.launch(pkg) }
                         AppRail(catalog: catalog, part: .others, horizontal: true) { pkg in model.launch(pkg) }
                     }
-                    ArrowScroll(axis: .horizontal) { navItems }
+                    // 導覽項目：長度適中就好（不撐滿），放不下才捲動；金剛三鍵固定在最右邊
+                    FitScroll(axis: .horizontal) { navItems }
                         .liquidPanel()
+                        .layoutPriority(1)
                         .disabled(model.appClosed).opacity(model.appClosed ? 0.4 : 1)
+                    Spacer(minLength: 0)
                     navKeys.padding(.horizontal, 4).liquidPanel()
                         .disabled(model.appClosed).opacity(model.appClosed ? 0.4 : 1)
                 }
@@ -307,6 +318,7 @@ struct SideColumn: View {
         .padding(.vertical, 6)
         .environment(\.colorScheme, .dark)
         .background { GlassBackground() }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { barWidth = $0 }
     }
 
     private var column: some View {

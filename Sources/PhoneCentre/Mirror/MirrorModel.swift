@@ -246,8 +246,14 @@ final class MirrorModel: ObservableObject {
         guard let old else { return }
         retiring = nil
         if let from = old.display, let to = mine {
-            for task in await rootTasks(onDisplay: from) {
-                _ = try? await device.client.shell("am display move-stack \(task) \(to)")
+            // 搬完要確認舊顯示器上已經沒有 task 才關舊 session，不然 App 會掉回手機主螢幕（佔住主螢幕一段時間）
+            for _ in 0..<4 {
+                let tasks = await rootTasks(onDisplay: from)
+                if tasks.isEmpty { break }
+                for task in tasks {
+                    _ = try? await device.client.shell("am display move-stack \(task) \(to)")
+                }
+                try? await Task.sleep(nanoseconds: 250_000_000)
             }
             try? await Task.sleep(nanoseconds: 400_000_000)
             await nudgeDisplayConfig(to)
@@ -262,12 +268,20 @@ final class MirrorModel: ObservableObject {
     /// App 在主螢幕與獨立視窗間切換後常停在舊的版面（跑版），這樣就會重繪。
     private func nudgeDisplayConfig(_ d: Int) async {
         let c = device.client
+        // 顯示器不存在（例如剛被關掉）時，`wm density -d <id>` 會退回去操作主螢幕，把主螢幕的密度改掉再改回，
+        // 主螢幕就會重排。所以先確認這個虛擬顯示器真的還在，而且絕不碰主螢幕（0）。
+        guard d != 0, await displayExists(d) else { return }
         let out = (try? await c.shell("wm density -d \(d)")) ?? ""
         guard let line = out.split(separator: "\n").last(where: { $0.contains("density:") }),
               let dpi = Int(line.split(separator: ":").last?.trimmingCharacters(in: .whitespaces) ?? "") else { return }
         _ = try? await c.shell("wm density \(dpi + 1) -d \(d)")
         try? await Task.sleep(nanoseconds: 250_000_000)
         _ = try? await c.shell("wm density \(dpi) -d \(d)")
+    }
+
+    private func displayExists(_ d: Int) async -> Bool {
+        let out = (try? await device.client.shell("dumpsys display | grep -c 'DisplayInfo{\"scrcpy\", displayId \(d)\"'")) ?? ""
+        return (Int(out.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0) > 0
     }
 
     /// 把 App 重新啟動（強制停止後在這個顯示器重開），讓它依這個顯示器的密度重新繪製。

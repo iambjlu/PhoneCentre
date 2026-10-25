@@ -48,3 +48,26 @@ struct ArrowScroll<Content: View>: View {
         .help(forward ? "往後捲動" : "往前捲動")
     }
 }
+
+/// 內容多長就多長（不撐滿可用空間），放不下才縮短並出現箭頭可以捲動
+struct FitScroll<Content: View>: View {
+    let axis: Axis
+    @ViewBuilder let content: () -> Content
+    @State private var length: CGFloat = 0
+
+    var body: some View {
+        ArrowScroll(axis: axis) {
+            content().background(GeometryReader { g in
+                Color.clear.preference(key: FitScrollLengthKey.self, value: axis == .horizontal ? g.size.width : g.size.height)
+            })
+        }
+        .onPreferenceChange(FitScrollLengthKey.self) { length = $0 }
+        .frame(maxWidth: axis == .horizontal && length > 0 ? length : nil,
+               maxHeight: axis == .vertical && length > 0 ? length : nil)
+    }
+}
+
+private struct FitScrollLengthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
