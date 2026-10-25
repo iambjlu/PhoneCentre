@@ -44,6 +44,8 @@ struct GlassBackground: NSViewRepresentable {
 struct StatusIndicator: View {
     let status: DeviceStatus
     var size: CGFloat = 38
+    /// 手機狀態還沒讀到之前不顯示任何（會是錯的）資訊，只轉圈圈
+    var loaded = true
 
     private var level: Double { status.batteryLevel < 0 ? 0 : Double(status.batteryLevel) / 100 }
     private var ringColor: Color {
@@ -56,6 +58,15 @@ struct StatusIndicator: View {
     private let segments: [(Double, Double)] = [(145, 232), (308, 395)]
 
     var body: some View {
+        if loaded { indicator } else {
+            ProgressView().controlSize(.small)
+                .frame(width: size, height: size)
+                .padding(.top, 22)
+                .padding(.bottom, 4)
+        }
+    }
+
+    private var indicator: some View {
         ZStack {
             Canvas { ctx, sz in
                 let c = CGPoint(x: sz.width / 2, y: sz.height / 2)
@@ -248,7 +259,7 @@ struct SideColumn: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            StatusIndicator(status: model.status)
+            StatusIndicator(status: model.status, loaded: model.statusLoaded)
                 .contentShape(Rectangle())
                 // 主螢幕：點狀態環降下通知中心
                 .onTapGesture { if !model.isVirtualDisplay { model.session?.send(.expandNotifications) } }

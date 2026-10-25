@@ -5,6 +5,9 @@ struct DeviceOverview: View {
     let device: Device
     @State private var storage = ""
     @State private var status = DeviceStatus()
+    /// 手機狀態讀到之前，相關欄位只轉圈圈，不顯示預設的錯誤資訊（例如「沒有 SIM 卡」「未連線」）
+    @State private var statusLoaded = false
+    @State private var storageLoaded = false
     @State private var showPassword = false
     @State private var showSerial = false
     @State private var message = ""
@@ -41,17 +44,21 @@ struct DeviceOverview: View {
                         row("型號", device.info.map { "\($0.manufacturer) \($0.model)" } ?? device.model)
                         row("Android", device.info.map { "\($0.androidVersion)（API \($0.sdk)）" } ?? "—")
                         row("螢幕", device.info.map { "\($0.screenSize) · \($0.density) dpi" } ?? "—")
-                        if let d = manufactureText { row("生產日期", d) }
-                        if status.sims.count > 1 {
-                            ForEach(status.sims, id: \.slot) { row("電信業者\($0.slot)", simText($0)) }
+                        if !statusLoaded {
+                            ForEach(["生產日期", "電信業者", "Wi-Fi", "電池", "電池容量", "循環次數"], id: \.self) { loadingRow($0) }
                         } else {
-                            row("電信業者", carrierText)
+                            if let d = manufactureText { row("生產日期", d) }
+                            if status.sims.count > 1 {
+                                ForEach(status.sims, id: \.slot) { row("電信業者\($0.slot)", simText($0)) }
+                            } else {
+                                row("電信業者", carrierText)
+                            }
+                            row("Wi-Fi", wifiText)
+                            row("電池", batteryText)
+                            if let c = capacityText { row("電池容量", c) }
+                            if let n = status.batteryCycles { row("循環次數", "\(n) 次") }
                         }
-                        row("Wi-Fi", wifiText)
-                        row("電池", batteryText)
-                        if let c = capacityText { row("電池容量", c) }
-                        if let n = status.batteryCycles { row("循環次數", "\(n) 次") }
-                        row("儲存空間", storage.isEmpty ? "—" : storage)
+                        if storageLoaded { row("儲存空間", storage.isEmpty ? "—" : storage) } else { loadingRow("儲存空間") }
                         HStack(alignment: .top) {
                             Text("序號").foregroundStyle(.secondary).frame(width: 80, alignment: .leading)
                             Text(showSerial ? (device.info?.serialNo ?? device.serial) : "••••••••••").textSelection(.enabled)
@@ -90,6 +97,13 @@ struct DeviceOverview: View {
             }
         }
         .sheet(isPresented: $showPassword) { LockPasswordSheet(device: device) }
+    }
+
+    private func loadingRow(_ k: String) -> some View {
+        HStack(alignment: .center) {
+            Text(k).foregroundStyle(.secondary).frame(width: 80, alignment: .leading)
+            ProgressView().controlSize(.small)
+        }
     }
 
     private func row(_ k: String, _ v: String) -> some View {
@@ -149,13 +163,14 @@ struct DeviceOverview: View {
 
     private func loadStatus() async {
         let c = device.client
-        if let s = await DeviceStatus.fetch(c) { status = s }
+        if let s = await DeviceStatus.fetch(c) { status = s; statusLoaded = true }
         // df -k：總量、已用、可用（KB）。顯示「剩餘可用空間」與占總容量的百分比
         if let df = try? await c.shell("df -k /data | tail -1") {
             let p = df.split(separator: " ", omittingEmptySubsequences: true)
             if p.count >= 4, let total = Double(p[1]), let used = Double(p[2]), let avail = Double(p[3]), total > 0 {
                 func g(_ kb: Double) -> String { String(format: "%.0fG", kb / 1_048_576) }
                 storage = "已用 \(g(used)) / 共 \(g(total))，剩餘可用空間 \(g(avail))（\(Int((avail / total * 100).rounded()))%）"
+                storageLoaded = true
             }
         }
     }

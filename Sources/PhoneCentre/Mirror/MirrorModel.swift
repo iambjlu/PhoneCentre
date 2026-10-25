@@ -27,6 +27,8 @@ final class MirrorModel: ObservableObject {
     /// 桌面模式還沒開過任何 App
     @Published var desktopEmpty = true
     @Published var status = DeviceStatus()
+    /// 第一次讀到手機狀態之前為 false（此時狀態環只轉圈圈，不顯示預設的錯誤資訊）
+    @Published var statusLoaded = false
     /// 截圖時的白閃（1 → 0 淡出）
     @Published var flashOpacity = 0.0
     /// 由視窗控制器提供：關閉這個視窗
@@ -523,7 +525,10 @@ final class MirrorModel: ObservableObject {
     }
 
     private func refreshStatus() async {
-        if let s = await DeviceStatus.fetch(device.client), s != status { status = s }
+        if let s = await DeviceStatus.fetch(device.client) {
+            if s != status { status = s }
+            statusLoaded = true
+        }
     }
 
     private func pollStatus() async {
