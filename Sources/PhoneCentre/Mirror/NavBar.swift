@@ -53,7 +53,7 @@ struct StatusIndicator: View {
     }
 
     // 角度：SwiftUI 由 3 點鐘方向順時針量起（270° = 正上方，90° = 正下方）
-    private let segments: [(Double, Double)] = [(145, 250), (290, 395)]
+    private let segments: [(Double, Double)] = [(145, 238), (302, 395)]
 
     var body: some View {
         ZStack {
@@ -84,13 +84,13 @@ struct StatusIndicator: View {
             }
             center.offset(y: -size * 0.02)
             if status.hasSim {
-                // 訊號格：在 Wi-Fi 下方，排成微彎的一排（兩端略高）
-                let r = size * 0.47
+                // 訊號格：排在電池環下方缺口的同一個圓上，彼此與兩端離電池環的角度都相同（22°）
+                let r = size / 2 - 2
                 ForEach(0..<4, id: \.self) { i in
-                    let phi = [-0.62, -0.2, 0.2, 0.62][i]
+                    let a = Angle.degrees(90 + (1.5 - Double(i)) * 22).radians
                     Circle().fill(Color.white.opacity(i < status.signalBars ? 1 : 0.28))
                         .frame(width: 3.6, height: 3.6)
-                        .offset(x: r * CGFloat(sin(phi)), y: r * CGFloat(cos(phi)) - 1)
+                        .offset(x: r * CGFloat(cos(a)), y: r * CGFloat(sin(a)))
                 }
             }
         }
@@ -253,7 +253,7 @@ struct SideColumn: View {
                         Spacer(minLength: 0)
                     } else {
                         AppRail(catalog: catalog) { pkg in model.launch(pkg) }
-                            .liquidPanel()
+                        Spacer(minLength: 0)
                     }
                     navBar.padding(.vertical, 6).liquidPanel()
                 }

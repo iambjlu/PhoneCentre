@@ -134,21 +134,31 @@ struct AppRail: View {
     /// 往左或往右拖超過這個距離（拖出 App 列）放開才算
     static let tearOffDistance: CGFloat = 70
 
+    /// 液態玻璃面板的高度跟著圖示數量：放得下就剛好包住，放不下才捲動
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(spacing: 10) {
-                ForEach(catalog.running, id: \.self) { pkg in
-                    railIcon(pkg, running: true)
-                }
-                if !catalog.running.isEmpty && !catalog.recent.isEmpty {
-                    Divider().padding(.horizontal, 12).opacity(0.4)
-                }
-                ForEach(catalog.recent, id: \.self) { pkg in
-                    railIcon(pkg, running: false)
-                }
+        if catalog.running.isEmpty && catalog.recent.isEmpty {
+            EmptyView()
+        } else {
+            ViewThatFits(in: .vertical) {
+                iconList.liquidPanel()
+                ScrollView(.vertical, showsIndicators: false) { iconList }.liquidPanel()
             }
-            .padding(.vertical, 10)
         }
+    }
+
+    private var iconList: some View {
+        VStack(spacing: 10) {
+            ForEach(catalog.running, id: \.self) { pkg in
+                railIcon(pkg, running: true)
+            }
+            if !catalog.running.isEmpty && !catalog.recent.isEmpty {
+                Divider().padding(.horizontal, 12).opacity(0.4)
+            }
+            ForEach(catalog.recent, id: \.self) { pkg in
+                railIcon(pkg, running: false)
+            }
+        }
+        .padding(.vertical, 10)
     }
 
     private func railIcon(_ pkg: String, running: Bool) -> some View {
