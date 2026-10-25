@@ -80,7 +80,7 @@ Sources/PhoneCentre/           Swift 原始碼（下面各章節）
 - 遠端 PhoneCentre：新增主機（名稱、主機、port、密碼）、Bonjour（`_phonecentre._tcp`）瀏覽區域網路上的 PhoneCentre、管理已加入的主機。
 
 ### DeviceOverview.swift
-裝置總覽：鏡像畫面、桌面模式、安裝 APK、設定解鎖密碼、裝置資訊（型號、Android 版本、螢幕、電池、儲存空間、序號）、拖放區（APK 安裝；照片影片存相機膠卷；其他存 Download），以及 DeX 的說明。
+裝置總覽：鏡像畫面、桌面模式(Beta)、安裝 APK、設定解鎖密碼、裝置資訊（型號、Android 版本、螢幕、電池、儲存空間、序號）、拖放區（APK 安裝；照片影片存相機膠卷；其他存 Download），以及 DeX 的說明。
 
 ## Sources/PhoneCentre/ADB
 
@@ -156,7 +156,7 @@ Mac 虛擬 keyCode（與鍵盤配置、輸入法無關）→ Android keycode；�
 - 操作：按鍵、黑屏切換、Mac 端靜音、啟動 App、截圖存到桌面、套用畫質（重啟）、拖放處理、Touch ID 解鎖。
 
 ### MirrorContentView.swift
-鏡像視窗內容：左側 `AppRail`（主鏡像與桌面模式；已開啟的 App 左邊有點，最近使用的沒有；可把圖示拖出 App 列放開，就在放開位置以獨立視窗開啟，拖曳時由 `DragGhost` 顯示跟著游標的圖示）、上方工具列（電源、音量、旋轉、返回、主畫面、最近使用、通知欄、截圖、黑屏、靜音、鍵盤模式、畫質設定；桌面模式另有小型啟動台）、解鎖橫幅、組字文字、提示訊息。另含 `AppIconView`、`VideoSettingsPopover`、`LockPasswordSheet`、`MiniLauncher`、`DragGhost`。
+鏡像視窗內容：左側 `AppRail`（主鏡像與桌面模式；已開啟的 App 左邊有點，最近使用的沒有；可把圖示拖出 App 列放開，就在放開位置以獨立視窗開啟，拖曳時由 `DragGhost` 顯示跟著游標的圖示）、上方工具列（電源、音量、旋轉、返回、主畫面、最近使用、通知欄、截圖、黑屏、靜音、鍵盤模式、畫質設定；桌面模式另有小型啟動台）、解鎖橫幅、組字文字、提示訊息（桌面模式還沒開 App 時提示從 App 列或啟動台開啟）。另含 `AppIconView`、`VideoSettingsPopover`、`LockPasswordSheet`、`MiniLauncher`、`DragGhost`。
 
 ### MirrorWindowController.swift
 鏡像視窗。主螢幕鏡像依畫面比例調整與縮放（保留 App 列與工具列空間）；虛擬顯示器視窗可自由調整，放開邊框時請 `MirrorModel` 重建顯示器。可指定開啟位置，否則錯開排列；App 名稱載入後更新標題；關閉時停止工作階段。

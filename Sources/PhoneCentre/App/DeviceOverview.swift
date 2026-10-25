@@ -24,7 +24,7 @@ struct DeviceOverview: View {
 
                 HStack(spacing: 12) {
                     BigButton("鏡像畫面", "rectangle.on.rectangle") { WindowManager.shared.openMirror(device) }
-                    BigButton("桌面模式", "desktopcomputer") { WindowManager.shared.openDesktop(device) }
+                    BigButton("桌面模式(Beta)", "desktopcomputer") { WindowManager.shared.openDesktop(device) }
                     BigButton("安裝 APK…", "shippingbox") { pickAPK() }
                     BigButton("解鎖密碼…", "touchid") { showPassword = true }
                 }

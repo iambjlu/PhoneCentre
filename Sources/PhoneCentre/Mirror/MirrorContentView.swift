@@ -141,7 +141,6 @@ struct MirrorContentView: View {
             VStack(spacing: 8) {
                 Image(systemName: "macwindow.on.rectangle").font(.largeTitle)
                 Text("從左側 App 列或工具列的 \(Image(systemName: "square.grid.3x3")) 開啟 App")
-                Text("這支手機的桌面程式不支援第二螢幕，所以這裡沒有桌面背景。").font(.caption)
             }
             .foregroundStyle(.secondary)
             .allowsHitTesting(false)
