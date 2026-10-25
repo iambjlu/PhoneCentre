@@ -190,11 +190,13 @@ struct PinnedAppsStrip: View {
     @ObservedObject var catalog: AppCatalog
     @ObservedObject private var settings = AppSettings.shared
 
-    private var order: (opened: [String], unopened: [String]) { catalog.barOrder(pins: settings.pinned(for: device)) }
+    private var parts: (favorites: [String], openOnly: [String]) { catalog.sections(pins: settings.pinned(for: device)) }
 
-    /// 排序與 App 列相同：已開啟的在前，分隔線之後才是還沒開的喜好項目
     var body: some View {
-        iconRow(order.opened, order.unopened)
+        VStack(alignment: .leading, spacing: 14) {
+            row("喜好項目", parts.favorites)
+            row("已開啟", parts.openOnly)
+        }
         .task(id: device.id) {
             if catalog.apps.isEmpty { await catalog.reload() }
             // 定時更新，已開啟與「目前在用」的標記才會跟著手機變
@@ -205,32 +207,24 @@ struct PinnedAppsStrip: View {
         }
     }
 
-    @ViewBuilder private func iconRow(_ opened: [String], _ unopened: [String]) -> some View {
-        if !opened.isEmpty || !unopened.isEmpty {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 16) {
-                    ForEach(opened, id: \.self) { icon($0) }
-                    if !opened.isEmpty && !unopened.isEmpty {
-                        Rectangle().fill(Color.primary.opacity(0.3)).frame(width: 1, height: 56)
+    @ViewBuilder private func row(_ title: String, _ packages: [String]) -> some View {
+        if !packages.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(title).font(.headline).foregroundStyle(.secondary)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 16) {
+                        ForEach(packages, id: \.self) { icon($0) }
                     }
-                    ForEach(unopened, id: \.self) { icon($0) }
+                    .padding(.vertical, 4)
                 }
-                .padding(.vertical, 4)
             }
         }
     }
 
     private func icon(_ pkg: String) -> some View {
         VStack(spacing: 5) {
-            ZStack(alignment: .topTrailing) {
-                AppIconView(catalog: catalog, package: pkg, size: 52)
-                    .shadow(color: .black.opacity(0.15), radius: 3, y: 1)
-                if settings.isPinned(pkg, on: device) {
-                    Image(systemName: "heart.fill").font(.system(size: 8)).foregroundStyle(.white)
-                        .padding(3).background(Circle().fill(Color.accentColor))
-                        .offset(x: 5, y: -3)
-                }
-            }
+            AppIconView(catalog: catalog, package: pkg, size: 52)
+                .shadow(color: .black.opacity(0.15), radius: 3, y: 1)
             Text(catalog.label(for: pkg)).font(.caption).lineLimit(1).frame(width: 72)
             RunningMark(running: catalog.running.contains(pkg), current: pkg == catalog.foreground)
         }

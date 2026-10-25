@@ -101,18 +101,17 @@ struct LaunchpadView: View {
     /// 沒有搜尋時：喜好項目、已開啟、依索引分組的所有 App，右邊有 A–Z／ㄅ–ㄦ 索引列可以快速跳轉
     private var content: some View {
         ScrollViewReader { proxy in
-            // 排序與 App 列相同：已開啟的在前，分隔線之後才是還沒開的喜好項目
-            let order = catalog.barOrder(pins: pins)
-            let openApps = entries(order.opened)
-            let pinnedApps = entries(order.unopened)
+            // 「喜好項目」（已開啟的在前）與「已開啟」（已開啟但沒加入喜好項目的）
+            let parts = catalog.sections(pins: pins)
+            let pinnedApps = entries(parts.favorites)
+            let openApps = entries(parts.openOnly)
             let taken = Set(pinnedApps.map(\.package) + openApps.map(\.package))
             let groups = grouped(filteredApps.filter { query.isEmpty ? !taken.contains($0.package) : true })
             ScrollView {
                 VStack(alignment: .leading, spacing: 26) {
                     if query.isEmpty {
-                        section(nil, openApps)
-                        if !openApps.isEmpty && !pinnedApps.isEmpty { GlassDivider(opacity: 0.25).padding(.vertical, -6) }
-                        section(nil, pinnedApps)
+                        section("喜好項目", pinnedApps)
+                        section("已開啟", openApps)
                         if !groups.isEmpty, !(pinnedApps.isEmpty && openApps.isEmpty) {
                             Text("所有 App").font(.headline).foregroundStyle(.secondary).padding(.bottom, -12)
                         }
@@ -170,16 +169,8 @@ struct LaunchpadView: View {
 
     private func cell(_ app: AppEntry) -> some View {
         VStack(spacing: 6) {
-            ZStack(alignment: .bottom) {
-                AppIconView(catalog: catalog, package: app.package, size: 64)
-                    .shadow(color: .black.opacity(0.15), radius: 3, y: 1)
-                if settings.isPinned(app.package, on: device) {
-                    Image(systemName: "heart.fill").font(.system(size: 9)).foregroundStyle(.white)
-                        .padding(4).background(Circle().fill(Color.accentColor))
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                        .offset(x: 6, y: -4)
-                }
-            }
+            AppIconView(catalog: catalog, package: app.package, size: 64)
+                .shadow(color: .black.opacity(0.15), radius: 3, y: 1)
             Text(app.label).font(.caption).lineLimit(1).truncationMode(.tail)
             RunningMark(running: catalog.running.contains(app.package), current: app.package == catalog.foreground)
         }

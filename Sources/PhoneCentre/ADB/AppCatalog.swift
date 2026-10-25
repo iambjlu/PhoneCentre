@@ -229,3 +229,18 @@ extension AppCatalog {
         return (opened, unopened)
     }
 }
+
+extension AppCatalog {
+    /// 總覽與啟動台的分區：「喜好項目」＝所有釘選的（已開啟的在前，還沒開的在後）；
+    /// 「已開啟」＝已開啟但沒加入喜好項目的。目前在最上層的 App 排在它那一區的最前面。
+    func sections(pins: [String]) -> (favorites: [String], openOnly: [String]) {
+        let cur = foreground
+        let run = running
+        let favorites = pins.filter { $0 == cur }
+            + pins.filter { run.contains($0) && $0 != cur }
+            + pins.filter { !run.contains($0) && $0 != cur }
+        let openOnly = (cur.map { c in pins.contains(c) ? [] : [c] } ?? [])
+            + run.filter { !pins.contains($0) && $0 != cur }
+        return (favorites, openOnly)
+    }
+}
