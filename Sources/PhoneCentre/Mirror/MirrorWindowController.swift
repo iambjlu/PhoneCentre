@@ -11,6 +11,8 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
     private var bag: Set<AnyCancellable> = []
     /// 使用者自己調整過大小後，不再依影像大小改視窗
     private var userResized = false
+    /// 還原的視窗大小（扣掉右側欄）；有的話虛擬顯示器就依這個大小建立，不會被影像大小改掉
+    private var savedVideoSize: CGSize?
 
     private var chromeWidth: CGFloat { MirrorLayout.railWidth + 1 }
     private var chromeHeight: CGFloat { MirrorLayout.toolbarHeight }
@@ -30,9 +32,17 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
         window.tabbingMode = .disallowed
         window.contentMinSize = NSSize(width: 240 + MirrorLayout.railWidth, height: MirrorLayout.minContentHeight)
         window.setFrameAutosaveName("Mirror.\(model.device.id).\(model.appPackage ?? (model.desktopMode ? "desktop" : "main"))")
+        // 虛擬顯示器視窗（獨立 App、桌面模式）記住上次的大小：先還原大小，再依需要移到指定位置
+        let restored = window.setFrameUsingName(window.frameAutosaveName)
+        var restoredSize: CGSize?
+        if restored, model.isVirtualDisplay {
+            let c = window.contentLayoutRect.size
+            restoredSize = CGSize(width: c.width - (MirrorLayout.railWidth + 1), height: c.height - MirrorLayout.toolbarHeight)
+        }
+        savedVideoSize = restoredSize
         if let topLeft {
             window.setFrameTopLeftPoint(topLeft)
-        } else if !window.setFrameUsingName(window.frameAutosaveName) {
+        } else if !restored {
             // 錯開排列，不要疊在目前的視窗正上方
             if let key = NSApp.keyWindow, key.isVisible {
                 window.setFrameTopLeftPoint(NSPoint(x: key.frame.minX + 40, y: key.frame.maxY - 40))
@@ -58,6 +68,10 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
     @MainActor
     func show() {
         model.backingScale = window?.screen?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 1
+        if let savedVideoSize, savedVideoSize.width > 100, savedVideoSize.height > 100 {
+            userResized = true
+            model.presetDisplay(points: savedVideoSize)
+        }
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
         window?.makeFirstResponder(model.view)

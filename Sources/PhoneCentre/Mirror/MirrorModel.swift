@@ -206,6 +206,9 @@ final class MirrorModel: ObservableObject {
         return "\(Int(spec.px.width))x\(Int(spec.px.height))/\(spec.dpi)"
     }
 
+    /// 依還原的視窗大小建立虛擬顯示器（第一次連線前呼叫）
+    func presetDisplay(points pt: CGSize) { customDisplay = displaySpec(points: pt) }
+
     /// 使用者放開視窗邊框：依新的大小重建虛擬顯示器
     func resizeVirtualDisplay(toPoints pt: CGSize) {
         guard isVirtualDisplay, pt.width > 50, pt.height > 50 else { return }
