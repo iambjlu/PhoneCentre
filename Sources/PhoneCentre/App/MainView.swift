@@ -308,14 +308,3 @@ private struct DeviceToolbar: ViewModifier {
         }
     }
 }
-
-extension View {
-    /// 膠囊形的液態玻璃底（舊系統用材質）
-    @ViewBuilder func glassCapsule() -> some View {
-        if #available(macOS 26.0, *) {
-            self.glassEffect(.regular, in: Capsule())
-        } else {
-            self.background(.thinMaterial, in: Capsule())
-        }
-    }
-}
