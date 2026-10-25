@@ -299,12 +299,13 @@ struct SideColumn: View {
             NavMenu(help: "輸入方式：\(model.keyboardMode.title)") {
                 sfIcon(model.keyboardMode == .physical ? "keyboard" : "keyboard.fill")
             } items: {
-                ForEach(KeyboardMode.allCases) { m in
-                    Button { model.keyboardMode = m } label: {
-                        Label(m.title + (model.keyboardMode == m ? "  ✓" : ""),
-                              systemImage: m == .physical ? "keyboard" : "keyboard.fill")
+                // 用系統的單選 Picker，勾選記號跟其他開關一樣畫在左邊
+                Picker("輸入方式", selection: Binding(get: { model.keyboardMode }, set: { model.keyboardMode = $0 })) {
+                    ForEach(KeyboardMode.allCases) { m in
+                        Label(m.title, systemImage: m == .physical ? "keyboard" : "keyboard.fill").tag(m)
                     }
                 }
+                .pickerStyle(.inline)
             }
             if model.desktopMode {
                 NavButton(help: "在這個桌面開啟 App") { showLauncher.toggle() } icon: { sfIcon("square.grid.2x2") }
@@ -322,13 +323,14 @@ struct SideColumn: View {
                 if model.isVirtualDisplay {
                     Button("旋轉視窗方向") { model.rotateVirtualDisplay() }
                 } else {
-                    ForEach([(0, "直向", 0.0), (1, "橫向（向左）", 90.0), (2, "直向（倒立）", 180.0), (3, "橫向（向右）", 270.0)], id: \.0) { r in
-                        Button { model.setRotation(r.0) } label: {
-                            Label {
-                                Text(r.1 + (!model.status.autoRotate && model.status.userRotation == r.0 ? "  ✓" : ""))
-                            } icon: { rotatedSymbol("iphone", degrees: r.2) }
+                    // 用系統的單選 Picker（自動旋轉開著時四個都不勾），勾選記號跟下面的開關一樣畫在左邊
+                    Picker("方向", selection: Binding(get: { model.status.autoRotate ? -1 : model.status.userRotation },
+                                                    set: { if $0 >= 0 { model.setRotation($0) } })) {
+                        ForEach([(0, "直向", 0.0), (1, "橫向（向左）", 90.0), (2, "直向（倒立）", 180.0), (3, "橫向（向右）", 270.0)], id: \.0) { r in
+                            Label { Text(r.1) } icon: { rotatedSymbol("iphone", degrees: r.2) }.tag(r.0)
                         }
                     }
+                    .pickerStyle(.inline)
                     Divider()
                     Toggle("自動旋轉", isOn: Binding(get: { model.status.autoRotate }, set: { model.setAutoRotate($0) }))
                     Toggle("強制所有 App 使用這個方向", isOn: Binding(get: { model.status.forceOrientation }, set: { model.setForceOrientation($0) }))
