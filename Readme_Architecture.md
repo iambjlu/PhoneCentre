@@ -109,7 +109,7 @@ Sources/PhoneCentre/           Swift 原始碼（下面各章節；PhoneData 為
 
 ### AppCatalog.swift
 一台裝置的 App 清單、圖示（存在 `CacheManager` 的 icons 目錄）、已開啟與最近使用的 App。
-- 已開啟／最近：解析 `dumpsys activity recents` 的每個「Recent #N」區塊，取 `realActivity`／`cmp=` 的套件名；找不到時以 affinity 對已安裝套件做前綴比對（例如 `com.android.settings.root` → `com.android.settings`）；排除桌面、最近使用畫面。程序還在（`ps -A`）的算「已開啟」。另以 `dumpsys activity activities` 的 `topResumedActivity` 取得目前在最上層的 App（`foreground`，桌面與系統介面不算）。
+- 已開啟／最近：解析 `dumpsys activity recents` 的每個「Recent #N」區塊，取 `realActivity`／`cmp=` 的套件名；找不到時以 affinity 對已安裝套件做前綴比對（例如 `com.android.settings.root` → `com.android.settings`）；排除桌面、最近使用畫面。程序還在（`ps -A`）的算「已開啟」。另以 `dumpsys activity activities` 的 `topResumedActivity` 取得目前在最上層的 App（`foreground`，桌面與系統介面不算）。最上層的 App 一定算「已開啟」，即使它不在最近使用清單裡（例如排除在最近使用之外的系統設定頁）。
 - 啟動、強制停止、解除安裝、開啟 App 資訊。
 - `icon(for:)` 在 view body 中呼叫也安全（不會同步修改 @Published）。
 

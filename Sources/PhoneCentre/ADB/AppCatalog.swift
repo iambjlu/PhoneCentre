@@ -136,8 +136,10 @@ final class AppCatalog: ObservableObject {
         where pkg != homePackage && pkg != "com.android.systemui" && !order.contains(pkg) {
             order.append(pkg)
         }
-        let run = order.filter { procs.contains($0) }
-        let rec = Array(order.filter { !procs.contains($0) }.prefix(12))
+        var run = order.filter { procs.contains($0) }
+        // 不在「最近使用」裡的 App（例如通訊功能設定這類排除在最近使用之外的）只要它在最上層，就一定是執行中
+        if let fg, !run.contains(fg) { run.insert(fg, at: 0) }
+        let rec = Array(order.filter { !procs.contains($0) && $0 != fg }.prefix(12))
         if run != running { running = run }
         if rec != recent { recent = rec }
         loadIcons(run + rec)
