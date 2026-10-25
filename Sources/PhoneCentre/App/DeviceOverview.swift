@@ -3,8 +3,8 @@ import UniformTypeIdentifiers
 
 struct DeviceOverview: View {
     let device: Device
-    @State private var battery = ""
     @State private var storage = ""
+    @State private var status = DeviceStatus()
     @State private var showPassword = false
     @State private var showSerial = false
     @State private var message = ""
@@ -41,7 +41,12 @@ struct DeviceOverview: View {
                         row("型號", device.info.map { "\($0.manufacturer) \($0.model)" } ?? device.model)
                         row("Android", device.info.map { "\($0.androidVersion)（API \($0.sdk)）" } ?? "—")
                         row("螢幕", device.info.map { "\($0.screenSize) · \($0.density) dpi" } ?? "—")
-                        row("電池", battery.isEmpty ? "—" : battery)
+                        if let d = manufactureText { row("生產日期", d) }
+                        row("電信業者", carrierText)
+                        row("Wi-Fi", wifiText)
+                        row("電池", batteryText)
+                        if let c = capacityText { row("電池容量", c) }
+                        if let n = status.batteryCycles { row("循環次數", "\(n) 次") }
                         row("儲存空間", storage.isEmpty ? "—" : storage)
                         HStack(alignment: .top) {
                             Text("序號").foregroundStyle(.secondary).frame(width: 80, alignment: .leading)
@@ -84,14 +89,48 @@ struct DeviceOverview: View {
         }
     }
 
+    private var manufactureText: String? {
+        let d = status.manufactureDate
+        guard d.count == 8, d.allSatisfy(\.isNumber) else { return nil }
+        return "\(d.prefix(4))/\(d.dropFirst(4).prefix(2))/\(d.suffix(2))"
+    }
+
+    private var carrierText: String {
+        guard status.hasSim else { return "沒有 SIM 卡" }
+        var parts: [String] = []
+        if !status.carrier.isEmpty { parts.append(status.carrier) }
+        if !status.radioTech.isEmpty { parts.append(status.radioTech) }
+        if let d = status.signalDbm { parts.append("\(d)dBm") }
+        return parts.isEmpty ? (status.inService ? "—" : "沒有服務") : parts.joined(separator: " ")
+    }
+
+    private var wifiText: String {
+        guard !status.wifiSSID.isEmpty else { return "未連線" }
+        return status.wifiIP.isEmpty ? status.wifiSSID : "\(status.wifiSSID) · \(status.wifiIP)"
+    }
+
+    /// 插著電不一定在充電（例如最佳化電池充電），用電池狀態碼區分
+    private var batteryText: String {
+        guard status.batteryLevel >= 0 else { return "—" }
+        var t = "\(status.batteryLevel)%"
+        switch status.batteryStatus {
+        case 2: t += "（充電中）"
+        case 5: t += "（已充飽）"
+        case 4: t += status.pluggedIn ? "（已插電，未充電）" : ""
+        default: if status.pluggedIn { t += "（已插電，未充電）" }
+        }
+        return t
+    }
+
+    private var capacityText: String? {
+        guard let max = status.batteryMaxMah else { return nil }
+        guard let design = status.batteryDesignMah else { return "\(max) mAh" }
+        return "\(max) mAh / 設計 \(design) mAh（\(Int((Double(max) / Double(design) * 100).rounded()))%）"
+    }
+
     private func loadStatus() async {
         let c = device.client
-        if let b = try? await c.shell("dumpsys battery") {
-            let level = b.split(separator: "\n").first { $0.trimmingCharacters(in: .whitespaces).hasPrefix("level:") }
-                .map { $0.replacingOccurrences(of: "level:", with: "").trimmingCharacters(in: .whitespaces) } ?? "?"
-            let charging = b.contains("AC powered: true") || b.contains("USB powered: true") || b.contains("Wireless powered: true")
-            battery = "\(level)%" + (charging ? "（充電中）" : "")
-        }
+        if let s = await DeviceStatus.fetch(c) { status = s }
         if let df = try? await c.shell("df -h /data | tail -1") {
             let p = df.split(separator: " ", omittingEmptySubsequences: true)
             if p.count >= 4 { storage = "已用 \(p[2]) / 共 \(p[1])，剩餘 \(p[3])" }
