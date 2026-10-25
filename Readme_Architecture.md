@@ -5,7 +5,7 @@ macOS（SwiftUI + AppKit）的 Android 手機中心。透過 adb 連線手機，
 
 - 建置：`scripts/build.sh`（輸出 `build/PhoneCentre.app`；加 `--install` 會複製到 /Applications）
 - 只需要這個 `.app`：scrcpy-server 與手機端輔助程式都打包在裡面；adb 找不到時 App 會協助從 Google 官方下載
-- 最低系統：macOS 14
+- 最低系統：macOS 15
 
 ## 目錄
 
@@ -26,7 +26,7 @@ Sources/PhoneCentre/           Swift 原始碼（下面各章節；PhoneData 為
 1. 確認 `ThirdParty/scrcpy/scrcpy-server` 的 SHA256，不符就從 GitHub release 下載 v3.3.4。
 2. 有 Android SDK 且 Java 原始碼比 jar 新時，用 javac（`-source 8`）＋ d8（`--min-api 26`）重建 `Resources/phonecentre-helper.jar`；沒有 SDK 就用已提交的 jar。
 3. 沒有 `Resources/AppIcon.icns` 時執行 `make_icon.swift` 產生。
-4. `swift build -c release --arch arm64`，用 `vtool` 把執行檔標成「以目前 SDK 建置」（SwiftPM 預設標成 macOS 14 SDK，系統會沿用舊外觀，新版 Liquid Glass 不會套用），組裝 `.app`（執行檔、Info.plist、圖示、輔助程式 jar、scrcpy-server、授權聲明）。
+4. `swift build -c release --arch arm64`，用 `vtool` 把執行檔標成「以目前 SDK 建置」（SwiftPM 預設標成 macOS 15 SDK，系統會沿用舊外觀，新版 Liquid Glass 不會套用），組裝 `.app`（執行檔、Info.plist、圖示、輔助程式 jar、scrcpy-server、授權聲明）。
 5. 簽章：優先用鑰匙圈中的「Apple Development」憑證（簽章固定，重新編譯後不必重新允許區域網路權限與鑰匙圈存取），可用環境變數 `PHONECENTRE_SIGN` 指定；都沒有就用 ad-hoc。
 
 ## AndroidHelper（手機端輔助程式）
@@ -72,7 +72,7 @@ Sources/PhoneCentre/           Swift 原始碼（下面各章節；PhoneData 為
 - `DockLauncher`：在 `~/Library/Application Support/PhoneCentre/Launchers/` 用 APFS clone（`cp -c`）複製一份 .app，改 `CFBundleIdentifier`／`CFBundleName` 後 ad-hoc 重新簽章，再以 `NSWorkspace.openApplication` 帶參數啟動；同一個鍵（裝置＋App）已在執行就直接切過去。主程式更新後副本會重建。複製後會清掉隔離屬性（`xattr -cr`，主程式從別台電腦／AirDrop 來時，帶著隔離屬性的副本會被 Gatekeeper 擋下），簽章失敗會報錯；啟動失敗時重建副本再試一次，仍失敗才改在主程式開視窗。標題中的特殊字元會替換成 `-`。
 
 ### MainView.swift
-主視窗（工具列：macOS 15 以上隱藏系統標題，由 `DeviceToolbar` 在 `principal` 項目裡用 `TitleTabsLayout` 自己排版——裝置名稱與副標題靠左，分頁選擇器空間夠時置中，被名稱擠到才往右移，名稱放不下才截斷；舊系統分頁放中間）：標準的 `NavigationSplitView`，分頁是放在工具列的原生分段選擇器；用最新 SDK 連結後由系統自動套用 Liquid Glass（圓角視窗、側邊欄、工具列按鈕、分頁藥丸）。視窗透明，最底層墊一層 `NSVisualEffectView`（`.underWindowBackground`）當毛玻璃底，SwiftUI 內容不加自訂底色。
+主視窗（工具列：隱藏系統標題，由 `DeviceToolbar` 在 `principal` 項目裡用 `TitleTabsLayout` 自己排版；這一條的寬度跟內容區（側邊欄以外，用 `onGeometryChange` 量）一樣，裝置名稱與副標題靠左，分頁選擇器空間夠時置中，被名稱擠到才往右移，名稱放不下才截斷）：標準的 `NavigationSplitView`，分頁是放在工具列的原生分段選擇器；用最新 SDK 連結後由系統自動套用 Liquid Glass（圓角視窗、側邊欄、工具列按鈕、分頁藥丸）。視窗透明，最底層墊一層 `NSVisualEffectView`（`.underWindowBackground`）當毛玻璃底，SwiftUI 內容不加自訂底色。
 - 側邊欄：本機裝置（選中的列底色是強調色，`DeviceRow` 由 MainView 傳入是否選中（並參考 `backgroundProminence`）把圖示改白、狀態燈外加白色細環，避免和底色糊在一起）、記住但目前離線的無線裝置（右鍵可立即重連或忘記）、各遠端 PhoneCentre 的裝置（每區標題有連線狀態燈與選單：重新連線、編輯、移除；沒有裝置時顯示狀態與「重新連線」按鈕）；底部顯示 adb server 狀態與最近事件。
 - 內容：分頁「總覽／啟動台／檔案／通知／簡訊／通話記錄／相機膠卷」；找不到 adb 時顯示 `AdbSetupView`（一鍵下載 Google Platform-Tools）。
 

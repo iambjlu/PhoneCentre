@@ -24,6 +24,7 @@ struct MainView: View {
     @State private var selection: String?
     @State private var tab: DeviceTab = .overview
     @State private var showAdd = false
+    @State private var detailWidth: CGFloat = 800
     @State private var editingHost: RemoteHost?
 
     var body: some View {
@@ -180,7 +181,8 @@ struct MainView: View {
                 }                .softScrollEdge()
                 .navigationTitle(d.displayName)
                 .navigationSubtitle(d.subtitle)
-                .modifier(DeviceToolbar(device: d, tab: $tab))
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { detailWidth = $0 }
+                .modifier(DeviceToolbar(device: d, tab: $tab, width: detailWidth))
             } else {
                 ContentUnavailableView(d.displayName, systemImage: "exclamationmark.triangle", description: Text(d.stateDescription))
             }
@@ -271,42 +273,34 @@ extension View {
 }
 
 
-/// 工具列：裝置名稱靠左，分頁選擇器空間夠時在中間，被名稱擠到時才往右移一點（不是靠右對齊）。
-/// macOS 15 以上自己畫名稱與副標題（隱藏系統的），讓兩者排在同一個版面；舊系統分頁放在中間。
+/// 工具列：這一條跟內容區（側邊欄以外）同寬；裝置名稱靠左，分頁選擇器空間夠時在中間，
+/// 被名稱擠到才往右移一點，名稱放不下才截斷。隱藏系統標題，名稱與副標題自己畫。
 private struct DeviceToolbar: ViewModifier {
     let device: Device
     @Binding var tab: DeviceTab
+    let width: CGFloat
 
-    private var picker: some View {
-        Picker("", selection: $tab) {
-            ForEach(DeviceTab.allCases) { Text($0.rawValue).tag($0) }
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .fixedSize()
-    }
-
-    @ViewBuilder
     func body(content: Content) -> some View {
-        if #available(macOS 15.0, *) {
-            content
-                .toolbar(removing: .title)
-                .toolbar {
-                    ToolbarItem(placement: .principal) {
-                        TitleTabsLayout {
-                            VStack(alignment: .leading, spacing: 0) {
-                                Text(device.displayName).font(.headline).lineLimit(1)
-                                Text(device.subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                            }
-                            .padding(.leading, 8)
-                            picker
+        content
+            .toolbar(removing: .title)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    TitleTabsLayout {
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(device.displayName).font(.headline).lineLimit(1)
+                            Text(device.subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                         }
-                        .frame(maxWidth: .infinity)
+                        .padding(.leading, 8)
+                        Picker("", selection: $tab) {
+                            ForEach(DeviceTab.allCases) { Text($0.rawValue).tag($0) }
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .fixedSize()
                     }
+                    .frame(width: max(width - 24, 300))
                 }
-        } else {
-            content.toolbar { ToolbarItem(placement: .principal) { picker } }
-        }
+            }
     }
 }
 

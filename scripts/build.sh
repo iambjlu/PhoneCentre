@@ -55,8 +55,8 @@ echo "==> 組裝 $APP"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/PhoneCentre"
-# SwiftPM 會把執行檔標成「用 macOS 14 SDK 建置」，系統就會沿用舊外觀；改標成目前的 SDK，才會套用新版 Liquid Glass 外觀
-vtool -set-build-version macos 14.0 "$(xcrun --show-sdk-version)" -replace -output "$APP/Contents/MacOS/PhoneCentre" "$APP/Contents/MacOS/PhoneCentre"
+# SwiftPM 會把執行檔標成「用 macOS 15 SDK 建置」，系統就會沿用舊外觀；改標成目前的 SDK，才會套用新版 Liquid Glass 外觀
+vtool -set-build-version macos 15.0 "$(xcrun --show-sdk-version)" -replace -output "$APP/Contents/MacOS/PhoneCentre" "$APP/Contents/MacOS/PhoneCentre"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp Resources/AppIcon.icns "$HELPER_JAR" "$APP/Contents/Resources/"
 cp "$SCRCPY_SERVER" "$APP/Contents/Resources/scrcpy-server"
