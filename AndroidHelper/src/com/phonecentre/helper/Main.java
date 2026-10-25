@@ -1,0 +1,294 @@
+package com.phonecentre.helper;
+
+import android.content.Context;
+import android.content.Intent;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
+import android.content.res.AssetManager;
+import android.content.res.Configuration;
+import android.content.res.Resources;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.media.MediaMetadataRetriever;
+import android.media.ThumbnailUtils;
+import android.os.Build;
+import android.util.Size;
+import android.graphics.Canvas;
+import android.graphics.Matrix;
+import android.media.ExifInterface;
+import android.graphics.drawable.Drawable;
+import android.os.Looper;
+import android.util.Base64;
+import android.util.DisplayMetrics;
+
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.PrintStream;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Method;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+
+/**
+ * 在裝置上以 shell 身分透過 app_process 執行：
+ *   CLASSPATH=/data/local/tmp/phonecentre-helper.jar app_process / com.phonecentre.helper.Main <cmd> [args]
+ *
+ * 指令：
+ *   list                 每行輸出「package \t label \t isSystem(0/1)」，只列出有啟動器入口的 App
+ *   icons <px> <pkg...>  每行輸出「package \t base64(PNG)」
+ *   thumbs <px> <path...> 每行輸出「path \t base64(JPEG)」，在手機端產生縮圖，只傳小圖
+ */
+public final class Main {
+
+    private static PrintStream out;
+    private static PackageManager pm;
+
+    public static void main(String[] args) {
+        out = new PrintStream(System.out, false);
+        if (args.length == 0) {
+            System.err.println("usage: list | icons <px> <pkg...>");
+            System.exit(2);
+        }
+        // 縮圖也要初始化系統 Context：三星的 MediaMetadataRetriever 內部會用到
+        try {
+            pm = obtainPackageManager();
+        } catch (Throwable t) {
+            pm = null;
+        }
+        try {
+            switch (args[0]) {
+                case "list":
+                    list();
+                    break;
+                case "icons":
+                    int px = Integer.parseInt(args[1]);
+                    for (int i = 2; i < args.length; i++) icon(args[i], px);
+                    break;
+                case "thumbs":
+                    int tpx = Integer.parseInt(args[1]);
+                    for (int i = 2; i < args.length; i++) thumb(args[i], tpx);
+                    break;
+                default:
+                    System.err.println("unknown command " + args[0]);
+                    System.exit(2);
+            }
+        } catch (Throwable t) {
+            t.printStackTrace();
+            System.exit(1);
+        }
+        out.flush();
+        System.exit(0);
+    }
+
+    // ---- Context / PackageManager ----
+
+    private static PackageManager obtainPackageManager() throws Exception {
+        if (Looper.getMainLooper() == null) Looper.prepareMainLooper();
+        Class<?> at = Class.forName("android.app.ActivityThread");
+        Object thread;
+        try {
+            thread = at.getMethod("systemMain").invoke(null);
+        } catch (Throwable t) {
+            Constructor<?> c = at.getDeclaredConstructor();
+            c.setAccessible(true);
+            thread = c.newInstance();
+        }
+        Context ctx = (Context) at.getMethod("getSystemContext").invoke(thread);
+        return ctx.getPackageManager();
+    }
+
+    // ---- list ----
+
+    private static void list() throws Exception {
+        Set<String> seen = new HashSet<>();
+        if (pm != null) {
+            Intent intent = new Intent(Intent.ACTION_MAIN);
+            intent.addCategory(Intent.CATEGORY_LAUNCHER);
+            List<ResolveInfo> infos = pm.queryIntentActivities(intent, 0);
+            for (ResolveInfo ri : infos) {
+                ApplicationInfo ai = ri.activityInfo.applicationInfo;
+                if (!seen.add(ai.packageName)) continue;
+                String label = safeLabel(ai);
+                boolean sys = (ai.flags & ApplicationInfo.FLAG_SYSTEM) != 0
+                        && (ai.flags & ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) == 0;
+                out.println(ai.packageName + "\t" + clean(label) + "\t" + (sys ? 1 : 0));
+            }
+        }
+        out.flush();
+    }
+
+    private static String safeLabel(ApplicationInfo ai) {
+        try {
+            CharSequence cs = pm.getApplicationLabel(ai);
+            if (cs != null && cs.length() > 0) return cs.toString();
+        } catch (Throwable ignored) {
+        }
+        try {
+            Resources r = resourcesFor(ai);
+            if (ai.labelRes != 0) return r.getString(ai.labelRes);
+        } catch (Throwable ignored) {
+        }
+        return ai.packageName;
+    }
+
+    private static String clean(String s) {
+        return s.replace('\t', ' ').replace('\n', ' ').replace('\r', ' ');
+    }
+
+    // ---- icons ----
+
+    private static void icon(String pkg, int px) {
+        try {
+            Drawable d = null;
+            ApplicationInfo ai = null;
+            if (pm != null) {
+                ai = pm.getApplicationInfo(pkg, 0);
+                try {
+                    d = pm.getApplicationIcon(ai);
+                } catch (Throwable ignored) {
+                }
+            }
+            if (d == null && ai != null) {
+                Resources r = resourcesFor(ai);
+                d = r.getDrawableForDensity(ai.icon, DisplayMetrics.DENSITY_XXXHIGH, null);
+            }
+            if (d == null) return;
+            Bitmap bmp = Bitmap.createBitmap(px, px, Bitmap.Config.ARGB_8888);
+            Canvas c = new Canvas(bmp);
+            d.setBounds(0, 0, px, px);
+            d.draw(c);
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            bmp.compress(Bitmap.CompressFormat.PNG, 100, bos);
+            out.println(pkg + "\t" + Base64.encodeToString(bos.toByteArray(), Base64.NO_WRAP));
+            out.flush();
+        } catch (Throwable t) {
+            System.err.println("icon " + pkg + ": " + t);
+        }
+    }
+
+    // ---- thumbs ----
+
+    private static void thumb(String path, int px) {
+        try {
+            String lower = path.toLowerCase(Locale.ROOT);
+            boolean video = lower.endsWith(".mp4") || lower.endsWith(".mov") || lower.endsWith(".3gp")
+                    || lower.endsWith(".mkv") || lower.endsWith(".webm");
+            Bitmap bmp = null;
+            File f = new File(path);
+            if (Build.VERSION.SDK_INT >= 29) {
+                try {
+                    Size size = new Size(px, px);
+                    bmp = video ? ThumbnailUtils.createVideoThumbnail(f, size, null)
+                                : ThumbnailUtils.createImageThumbnail(f, size, null);
+                } catch (Throwable ignored) {
+                }
+            }
+            if (bmp == null && video) {
+                MediaMetadataRetriever r = new MediaMetadataRetriever();
+                try {
+                    r.setDataSource(path);
+                    bmp = r.getFrameAtTime(0);
+                } finally {
+                    r.release();
+                }
+            }
+            if (bmp == null) {
+                BitmapFactory.Options o = new BitmapFactory.Options();
+                o.inJustDecodeBounds = true;
+                BitmapFactory.decodeFile(path, o);
+                int sample = 1;
+                while (o.outWidth / (sample * 2) >= px && o.outHeight / (sample * 2) >= px) sample *= 2;
+                o = new BitmapFactory.Options();
+                o.inSampleSize = sample;
+                bmp = BitmapFactory.decodeFile(path, o);
+            }
+            if (bmp == null) return;
+            if (!video) bmp = applyExifOrientation(path, bmp);
+            // 縮成短邊 px
+            int w = bmp.getWidth(), h = bmp.getHeight();
+            float scale = (float) px / Math.min(w, h);
+            if (scale < 1f) bmp = Bitmap.createScaledBitmap(bmp, Math.max(1, Math.round(w * scale)), Math.max(1, Math.round(h * scale)), true);
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            bmp.compress(Bitmap.CompressFormat.JPEG, 80, bos);
+            out.println(path + "\t" + Base64.encodeToString(bos.toByteArray(), Base64.NO_WRAP));
+            out.flush();
+        } catch (Throwable t) {
+            System.err.println("thumb " + path + ": " + t);
+        }
+    }
+
+    /**
+     * 部分機型（例如三星的 HEIC）產生的縮圖沒有套用 EXIF 方向。
+     * 比對原圖長寬：縮圖仍是未旋轉的比例才轉，避免已經轉過的再轉一次。
+     */
+    private static Bitmap applyExifOrientation(String path, Bitmap bmp) {
+        try {
+            int deg = 0, rw = 0, rh = 0;
+            String lower = path.toLowerCase(Locale.ROOT);
+            if (Build.VERSION.SDK_INT >= 28 && (lower.endsWith(".heic") || lower.endsWith(".heif"))) {
+                // HEIF 的旋轉寫在容器的 irot 屬性
+                MediaMetadataRetriever r = new MediaMetadataRetriever();
+                try {
+                    r.setDataSource(path);
+                    deg = parseInt(r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_IMAGE_ROTATION));
+                    rw = parseInt(r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_IMAGE_WIDTH));
+                    rh = parseInt(r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_IMAGE_HEIGHT));
+                } finally {
+                    r.release();
+                }
+            }
+            if (deg == 0) {
+                ExifInterface exif = new ExifInterface(path);
+                switch (exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
+                    case ExifInterface.ORIENTATION_ROTATE_90: deg = 90; break;
+                    case ExifInterface.ORIENTATION_ROTATE_180: deg = 180; break;
+                    case ExifInterface.ORIENTATION_ROTATE_270: deg = 270; break;
+                    default: return bmp;
+                }
+            }
+            if (deg != 180) {
+                if (rw <= 0 || rh <= 0) {
+                    BitmapFactory.Options b = new BitmapFactory.Options();
+                    b.inJustDecodeBounds = true;
+                    BitmapFactory.decodeFile(path, b);
+                    rw = b.outWidth;
+                    rh = b.outHeight;
+                }
+                if (rw <= 0 || rh <= 0) return bmp;
+                boolean rawLandscape = rw > rh;
+                boolean thumbLandscape = bmp.getWidth() > bmp.getHeight();
+                if (rawLandscape != thumbLandscape) return bmp;   // 已經轉過了
+            }
+            Matrix m = new Matrix();
+            m.postRotate(deg);
+            return Bitmap.createBitmap(bmp, 0, 0, bmp.getWidth(), bmp.getHeight(), m, true);
+        } catch (Throwable t) {
+            return bmp;
+        }
+    }
+
+    private static int parseInt(String s) {
+        try {
+            return s == null ? 0 : Integer.parseInt(s.trim());
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    private static Resources resourcesFor(ApplicationInfo ai) throws Exception {
+        Constructor<AssetManager> c = AssetManager.class.getDeclaredConstructor();
+        c.setAccessible(true);
+        AssetManager am = c.newInstance();
+        Method add = AssetManager.class.getDeclaredMethod("addAssetPath", String.class);
+        add.setAccessible(true);
+        add.invoke(am, ai.sourceDir);
+        DisplayMetrics dm = new DisplayMetrics();
+        dm.setToDefaults();
+        Configuration conf = new Configuration();
+        conf.setLocale(Locale.getDefault());
+        return new Resources(am, dm, conf);
+    }
+}
