@@ -57,6 +57,7 @@ Sources/PhoneCentre/           Swift 原始碼（下面各章節）
 - 儲存位置：預設在 UserDefaults suite `com.iambjlu.PhoneCentre.shared`（固定 suite，Dock 獨立視窗的子程序 bundle id 不同也讀得到）；可在設定選一個資料夾（例如 iCloud Drive），設定寫進該資料夾的 `settings.json`，每 3 秒偵測其他電腦改過的檔案並重新載入。資料夾路徑與自訂 adb 路徑只存在本機。
 - 密碼（手機解鎖密碼、分享密碼、遠端主機密碼）存在鑰匙圈；開啟「密碼也存到這個資料夾」時另外以明碼寫入 `settings.json` 的 `secrets`，另一台 Mac 讀到後會存回自己的鑰匙圈。
 - 列舉：`DockMode`（共用／每個視窗各自一個 Dock 圖示）、`AppLaunchTarget`（主螢幕／獨立視窗）、`KeyboardMode`（實體按鍵／Mac 輸入法）、`CacheClearPolicy`（斷線清除／幾天沒連線清除／只依容量）。
+- 釘選的 App：`SettingsData.pinnedApps`（依裝置鍵），`AppSettings.pinned／isPinned／togglePin`。
 - `VideoOptions`：FPS、bitrate、最大解析度；可依裝置（`CacheManager.key`）個別覆寫。
 
 ### WindowManager.swift
@@ -68,19 +69,19 @@ Sources/PhoneCentre/           Swift 原始碼（下面各章節）
 
 ### DockLauncher.swift
 - `ChildMode`：解析子程序參數（`--child --serial --host --port [--remote] [--package --label] [--desktop] [--icon] [--at x,y]`）。子程序會設定 Dock 圖示、開啟視窗，並在背景載入 App 清單（給 App 列與標題用）。
-- `DockLauncher`：在 `~/Library/Application Support/PhoneCentre/Launchers/` 用 APFS clone（`cp -c`）複製一份 .app，改 `CFBundleIdentifier`／`CFBundleName` 後 ad-hoc 重新簽章，再以 `NSWorkspace.openApplication` 帶參數啟動；同一個鍵（裝置＋App）已在執行就直接切過去。主程式更新後副本會重建。
+- `DockLauncher`：在 `~/Library/Application Support/PhoneCentre/Launchers/` 用 APFS clone（`cp -c`）複製一份 .app，改 `CFBundleIdentifier`／`CFBundleName` 後 ad-hoc 重新簽章，再以 `NSWorkspace.openApplication` 帶參數啟動；同一個鍵（裝置＋App）已在執行就直接切過去。主程式更新後副本會重建。複製後會清掉隔離屬性（`xattr -cr`，主程式從別台電腦／AirDrop 來時，帶著隔離屬性的副本會被 Gatekeeper 擋下），簽章失敗會報錯；啟動失敗時重建副本再試一次，仍失敗才改在主程式開視窗。標題中的特殊字元會替換成 `-`。
 
 ### MainView.swift
 主視窗：`NavigationSplitView`。
-- 側邊欄：本機裝置、記住但目前離線的無線裝置（右鍵可立即重連或忘記）、各遠端 PhoneCentre 的裝置；底部顯示 adb server 狀態與最近事件。
+- 側邊欄：本機裝置、記住但目前離線的無線裝置（右鍵可立即重連或忘記）、各遠端 PhoneCentre 的裝置（每區標題有連線狀態燈與選單：重新連線、編輯、移除；沒有裝置時顯示狀態與「重新連線」按鈕）；底部顯示 adb server 狀態與最近事件。
 - 內容：分頁「總覽／啟動台／檔案／相機膠卷」；找不到 adb 時顯示 `AdbSetupView`（一鍵下載 Google Platform-Tools）。
 
 ### AddDeviceSheet.swift
-- 無線 ADB：`adb connect`、Android 11+ 的配對（`adb pair`）、`adb mdns services` 找到的裝置。
-- 遠端 PhoneCentre：新增主機（名稱、主機、port、密碼）、Bonjour（`_phonecentre._tcp`）瀏覽區域網路上的 PhoneCentre、管理已加入的主機。
+- 無線 ADB：「USB 轉無線」（已連上的 USB 裝置一鍵 `adb tcpip 5555`，取得 wlan0 IP 後自動 `adb connect`）、`adb connect`、Android 11+ 的配對（`adb pair`）、`adb mdns services` 找到的裝置。
+- 遠端 PhoneCentre：新增主機（名稱、主機、port、密碼）、Bonjour（`_phonecentre._tcp`）瀏覽區域網路上的 PhoneCentre、管理已加入的主機（重連、編輯 `RemoteHostEditSheet`、移除）。
 
 ### DeviceOverview.swift
-裝置總覽：鏡像畫面、桌面模式(Beta)、安裝 APK、設定解鎖密碼、裝置資訊（型號、Android 版本、螢幕、電池、儲存空間、序號）、拖放區（APK 安裝；照片影片存相機膠卷；其他存 Download），以及 DeX 的說明。
+裝置總覽：最上面是 `PinnedAppsStrip`（釘選的 App，後面接已開啟的 App，點了依啟動台設定開啟，右鍵可取消釘選）、鏡像畫面、桌面模式(Beta)、安裝 APK、設定解鎖密碼、裝置資訊（型號、Android 版本、螢幕、電池、儲存空間、序號）、拖放區（APK 安裝；照片影片存相機膠卷；其他存 Download），以。
 
 ## Sources/PhoneCentre/ADB
 
@@ -123,6 +124,7 @@ Sources/PhoneCentre/           Swift 原始碼（下面各章節）
 - 參數只送與預設值不同的部分，並把 app_process 參數長度壓在 240 字元內：三星 S10（Android 12）的 `libstagefright`（`ACodec::reconfigEncoder4OtherApps`）會把程序 cmdline 讀進固定大小緩衝區，超過約 257 字元就 stack corruption 崩潰。超過時從最不重要的參數開始捨棄。
 - 依序連線 video（先讀 1 byte dummy）→ audio → control 三條 `localabstract:scrcpy_<scid>` socket；讀裝置名稱與 codec meta 後進入封包迴圈（12 byte header：pts＋config/keyframe 旗標、大小）。
 - 音訊：raw PCM。手機靜音選項：預設 `output`（REMOTE_SUBMIX，手機不發聲）；關閉時在 Android 13+ 用 `playback`＋`audio_dup`。
+- `captureFrame`：送 `resetVideo` 要求新關鍵幀並解成 PNG，用於虛擬顯示器截圖（新版 Android 的 `screencap -d` 對虛擬顯示器無效）。
 - 控制：剪貼簿（含 Mac→手機的 sequence）、手機訊息讀取（剪貼簿、ack、uhid）。
 - 虛擬顯示器：`new_display=WxH/dpi`、`vd_destroy_content=false`（關閉視窗時 App 回到手機主螢幕），單一 App 視窗關閉系統裝飾。
 
@@ -130,7 +132,7 @@ Sources/PhoneCentre/           Swift 原始碼（下面各章節）
 scrcpy 3.3.4 控制協定編碼（big-endian）：按鍵、文字、觸控、捲動、返回／點亮、通知欄、剪貼簿、面板電源、旋轉、啟動 App、重設影像。
 
 ### VideoDecoder.swift
-H.264 Annex B → AVCC，config 封包取 SPS/PPS 建立 `CMVideoFormatDescription`，畫面大小改變時回報；產生 `CMSampleBuffer` 交給 `AVSampleBufferDisplayLayer` 硬體解碼。
+H.264 Annex B → AVCC，config 封包取 SPS/PPS 建立 `CMVideoFormatDescription`，畫面大小改變時回報；產生 `CMSampleBuffer` 交給 `AVSampleBufferDisplayLayer` 硬體解碼。`captureNextKeyFrame` 用 `VTDecompressionSession` 把下一個關鍵幀解成 PNG（截圖用）。
 
 ### AudioPlayer.swift
 `AVAudioEngine`＋`AVAudioSourceNode` 播放 48 kHz 雙聲道 s16le，環形緩衝區超過 200ms 就丟掉舊資料維持低延遲。
@@ -143,7 +145,7 @@ Mac 虛擬 keyCode（與鍵盤配置、輸入法無關）→ Android keycode；�
 - 滑鼠左鍵 = 觸控；右鍵 = 返回（螢幕關閉時點亮）；中鍵 = 主畫面。虛擬顯示器視窗的右鍵／中鍵／⌘⌫ 由 `onBack`／`onHome` 交給 `MirrorModel`，作用在該視窗的顯示器上。
 - 觸控板捲動：模擬單指拖曳（移動超過門檻才放下手指，忽略慣性階段，由 Android 自己算慣性）；一般滑鼠滾輪送捲動事件。
 - 觸控板雙指縮放：以指標位置為中心、斜向擺放兩個虛擬手指。
-- 鍵盤：實體按鍵模式不經過輸入法（`inputContext` 回傳 nil），依按鍵位置送 keycode；Mac 輸入法模式實作 `NSTextInputClient`，ASCII 用 INJECT_TEXT，中文等非 ASCII 用設定剪貼簿並貼上，組字中的文字顯示在畫面下方。
+- 鍵盤：實體按鍵模式不經過輸入法（`inputContext` 回傳 nil），依按鍵位置送 keycode；Mac 輸入法模式實作 `NSTextInputClient`（非 ASCII 文字透過手機剪貼簿貼上：貼之前先記住 Mac 剪貼簿內容，貼完把手機剪貼簿放回去，期間 `clipboardGuardUntil` 內不接受手機→Mac 的剪貼簿回傳，Mac 剪貼簿不會被蓋掉），ASCII 用 INJECT_TEXT，中文等非 ASCII 用設定剪貼簿並貼上，組字中的文字顯示在畫面下方。
 - ⌘V 貼上 Mac 剪貼簿、⌘C／⌘X 取得手機剪貼簿、⌘A 全選、⌘Z 復原、⌘←／→ 行首行尾、⌘⌫ 主畫面。
 - 拖放檔案交給 `DropHandler`。
 
@@ -155,19 +157,26 @@ Mac 虛擬 keyCode（與鍵盤配置、輸入法無關）→ Android keycode；�
 - 調整視窗大小：先保留舊 session，用新大小另開 session（不帶 startApp），新顯示器就緒後以 `am display move-stack` 把舊顯示器的 root task 搬過去，再關舊 session，App 不會經過主螢幕；搬移失敗才退回重新啟動 App。
 - 關閉虛擬顯示器視窗（`MirrorWindowController.windowShouldClose`）：`sendAppsToBackground` 先把 App 搬到主螢幕，立刻 `am start --activity-reorder-to-front` 把主螢幕原本最上層的 Activity 拉回來，App 留在背景。
 - 獨立視窗每 2 秒檢查顯示器上是否還有 root task（解析 `taskId=… rootTaskId=…` 行；連續兩次沒有才算），沒有就 `appClosed`，視窗顯示「XXX 已關閉」與「打開」按鈕。
+- 獨立視窗的導覽：主畫面＝關閉視窗（App 留在背景，見上）、多工＝強制停止 App 並關閉視窗；桌面模式的主畫面／多工送 `input -d <id> keyevent` 給該桌面。
 - 導覽動作：主螢幕鏡像走 scrcpy 按鍵；虛擬顯示器上返回用 `input -d <id> keyevent`，主畫面（單一 App 視窗）改成重新啟動該 App 的首頁，多工改為選單切換同一視窗的 App，截圖用 `screencap -d`，旋轉改為視窗寬高對調並重建顯示器。旋轉選單（主螢幕）另可鎖定直向／橫向／自動旋轉（`settings put system`）。
 - 虛擬顯示器大小：像素 = 視窗點數 × Mac 螢幕的 backing scale（非 Retina 就是 1:1），密度 160 × scale，讓 1 個 Mac 點約等於 1 個 Android dp；長寬取 8 的倍數（無條件捨去，不超過視窗）；受「最大解析度」限制。放開視窗邊框時依新大小重建虛擬顯示器（`resizeVirtualDisplay`）。
 - 定時工作：Mac 剪貼簿 → 手機（0.7 秒）；主鏡像與桌面模式每 3 秒更新 App 列；主鏡像視窗在前景時偵測鎖定畫面。
-- 操作：按鍵、黑屏切換、Mac 端靜音、啟動 App、截圖存到桌面、套用畫質（重啟）、拖放處理、Touch ID 解鎖。
+- 操作：按鍵、黑屏切換、旋轉（`setRotation`／`setAutoRotate`，狀態讀自 `DeviceStatus`）、截圖（先白閃再淡出；主螢幕 `screencap`，虛擬顯示器或失敗時取鏡像關鍵幀；結果必須是 PNG 才存檔）、鎖定偵測（虛擬顯示器視窗也每 3 秒偵測，鎖定時顯示提示）、Mac 端靜音、啟動 App、截圖存到桌面、套用畫質（重啟）、拖放處理、Touch ID 解鎖。
 
 ### DeviceStatus.swift
 手機狀態：一次 shell 取得 `dumpsys battery`（電量、是否接電）、`dumpsys connectivity`（預設網路是 Wi-Fi 還是 MOBILE[LTE] → 4G/5G）、`dumpsys telephony.registry`（有資料連線的那張 SIM，否則第一張；訊號 level 0–4、是否有服務）、`gsm.sim.state`。`MirrorModel` 每 5 秒更新；另含 Wi-Fi RSSI（格數）、自動旋轉與目前鎖定方向。
 
 ### NavBar.swift
-左側欄 `SideColumn`：上方 `StatusIndicator`（外環＝電池，缺口在下的 270° 圓環；充電為綠色，≤20% 為紅色；環上方是閃電＋百分比；中間 Wi-Fi 或 4G/5G；訊號格是沿外環圓弧排在缺口裡的 4 個點），中間 App 列（獨立視窗沒有），下方導覽列。導覽列由上到下：畫質設定、輸入方式（選單）、桌面模式的啟動台、虛擬定位（尚未提供）、聲音（選單：音量＋／−、Mac 端靜音）、截圖、旋轉（選單）、黑屏與電源（只有主螢幕）、多工、主畫面、返回。按鍵一律是 SF Symbols；多工「|||」、主畫面（圓角方形）、返回「<」是仿 One UI 的自繪圖示（`SamsungNavIcon`）。
+右側欄 `SideColumn`（深色毛玻璃：`NSVisualEffectView` 加 macOS 26 的 `glassEffect`；視窗本身透明，桌面會透出來）：上方 `StatusIndicator`（外環＝電池，缺口在下的 270° 圓環，充電為綠色、≤20% 紅色；電量百分比放在環上方；中間是 Wi-Fi（依 RSSI 的格數）或 4G/5G；訊號格是沿外環圓弧排在缺口裡的 4 個點，格數取自三星 `SignalBarInfo`），中間 App 列（獨立視窗沒有），下方導覽列。導覽列由上到下：畫質設定、輸入方式（選單，`keyboard`＝實體按鍵、`keyboard.fill`＝Mac 輸入法）、桌面模式的啟動台、模擬定位、聲音（選單）、截圖、旋轉（選單：四個角度的 iPhone 圖示與自動旋轉開關；獨立視窗是旋轉視窗方向）、黑屏與電源（只有主螢幕）、多工、主畫面、返回。獨立視窗的主畫面是「關閉視窗」（`xmark.square`）、多工是「強制停止並關閉視窗」（六角形加叉）。多工「|||」、主畫面（圓角方形）、返回「<」是仿 One UI 的自繪圖示。`glassCard` 是疊在畫面上所有東西（提示、橫幅、已關閉卡片）共用的毛玻璃底。
+
+### LocationSimulator.swift
+模擬定位：`LocationSimulatorSheet` 用 MapKit 地圖（點選或搜尋）選位置，經由 `cmd location providers add-test-provider／set-test-provider-location`（gps 與 network，先以 `appops` 允許 shell 的 MOCK_LOCATION）讓手機採用；「停止模擬」移除測試提供者。
+
+### PatternPad.swift
+3×3 圖形密碼輸入元件（點編號 1–9）。解鎖密碼儲存為 `pattern:<編號>`；`LockScreenHelper.unlock` 用 `uiautomator dump` 找 `LockPatternView` 的範圍（找不到就用螢幕下半部推測），再用 `input motionevent` 畫出圖形。
 
 ### MirrorContentView.swift
-鏡像視窗內容：左側 `SideColumn`（寬度 `MirrorLayout.railWidth`，不透明底色，沒有上方工具列）內含 `AppRail`（主鏡像與桌面模式；已開啟的 App 左邊有點，最近使用的沒有；可把圖示往左或往右拖出 App 列超過距離後放開，就在放開位置以獨立視窗開啟，拖曳時由 `DragGhost` 顯示跟著游標的圖示）、解鎖橫幅、App 已關閉提示、組字文字、提示訊息（桌面模式還沒開 App 時提示從 App 列或啟動台開啟）。另含 `AppIconView`、`VideoSettingsPopover`（預設檔分段選擇＋影格率／解析度選單＋位元率滑桿）、`LockPasswordSheet`、`MiniLauncher`、`DragGhost`。
+鏡像視窗內容：畫面在左，右側 `SideColumn`（寬度 `MirrorLayout.railWidth`，毛玻璃，沒有上方工具列）內含 `AppRail`（主鏡像與桌面模式；已開啟的 App 左邊有點，最近使用的沒有；可把圖示往左或往右拖出 App 列超過距離後放開，就在放開位置以獨立視窗開啟，拖曳時由 `DragGhost` 顯示跟著游標的圖示）、解鎖橫幅、App 已關閉提示（「XXX 已關閉」＋打開按鈕）、鎖定提示、置中的提示訊息與截圖白閃、組字文字。另含 `AppIconView`、`VideoSettingsPopover`（預設檔分段選擇＋影格率／解析度選單＋位元率滑桿）、`LockPasswordSheet`（PIN／密碼或圖形）、`MiniLauncher`、`DragGhost`。
 
 ### MirrorWindowController.swift
 鏡像視窗。主螢幕鏡像依畫面比例調整與縮放（保留左側欄空間，內容最小高度 `MirrorLayout.minContentHeight`）；虛擬顯示器視窗可自由調整，放開邊框時請 `MirrorModel` 重建顯示器。可指定開啟位置，否則錯開排列；App 名稱載入後更新標題；關閉時停止工作階段。
@@ -176,12 +185,12 @@ Mac 虛擬 keyCode（與鍵盤配置、輸入法無關）→ Android keycode；�
 拖進來的檔案：`.apk` 安裝；png/jpeg/jpg/heic/heif/mov/mp4 存到 `/sdcard/DCIM/Camera`；資料夾與其他檔案存到 `/sdcard/Download`。
 
 ### LockScreenHelper.swift
-以 `dumpsys window`／`dumpsys activity activities` 的 keyguard 欄位判斷是否在鎖定畫面；解鎖密碼存在鑰匙圈（鍵 `lock.<裝置鍵>`）；`unlock` 先以 Touch ID（或 Mac 密碼）驗證，再喚醒、上滑、輸入密碼、Enter。
+以 `dumpsys window`／`dumpsys activity activities` 的 keyguard 欄位判斷是否在鎖定畫面；解鎖密碼存在鑰匙圈（鍵 `lock.<裝置鍵>`）；`unlock` 先以 Touch ID（或 Mac 密碼）驗證，再喚醒、上滑、輸入密碼（或畫圖形）、Enter；獨立視窗不用鏡像連線而走 adb `input`。
 
 ## Sources/PhoneCentre/Files
 
 ### RemoteFiles.swift
-`RemoteFile` 與 `RemoteFS`：用 `stat -L -c '%F|%s|%Y|%n'` 列目錄、mkdir、mv、rm（附媒體掃描）、下載到快取（`files` 目錄，大小相同就不重抓）。`remoteFileItemProvider` 讓檔案可拖到 Finder（系統要資料時才從手機下載）。`stableHash` 是跨程序穩定的短雜湊。
+`RemoteFile` 與 `RemoteFS`：用 `stat -L -c '%F|%s|%Y|%n'` 列目錄、mkdir、mv、rm（附媒體掃描）、下載到快取（`files` 目錄，大小相同就不重抓）。`remoteFileItemProvider` 讓檔案可拖到 Finder（系統要資料時才從手機下載；有副檔名的檔案不設 suggestedName，避免系統再補一次副檔名變成 .jpg.jpeg）。`stableHash` 是跨程序穩定的短雜湊。
 
 ### FileBrowserView.swift
 Finder 風格檔案管理：位置側邊欄、上一頁／下一頁／上一層、路徑列、可排序表格（資料夾排前面）、雙擊開啟、快速查看（`QuickLookPresenter`）、重新命名、刪除、新增資料夾、上傳、下載、拖入上傳、拖出到 Finder、顯示隱藏檔。
@@ -195,7 +204,7 @@ Apple「照片」風格相機膠卷：相簿選擇（DCIM 與 Pictures 下的資
 ## Sources/PhoneCentre/Launchpad
 
 ### LaunchpadView.swift
-類似 Mac 新版啟動台：上方「開啟方式」下拉選單（獨立視窗／主螢幕）、全部／使用者／系統篩選、搜尋、App 圖示格（已開啟的下方有點）；右鍵選單可選開啟位置、App 資訊、強制停止、拷貝套件名稱、解除安裝。
+類似 Mac 新版啟動台：上方「開啟方式」下拉選單（獨立視窗／主螢幕）、全部／使用者／系統篩選、搜尋、App 圖示格（已開啟的下方有點）；排序：釘選的最前面（依釘選順序）、已開啟的次之、其餘維持原順序，釘選的圖示有圖釘標記；右鍵選單可釘選／取消釘選、選開啟位置、App 資訊、強制停止、拷貝套件名稱、解除安裝。
 
 ## Sources/PhoneCentre/MenuBar
 
@@ -231,6 +240,7 @@ generic password 的讀寫（service `com.iambjlu.PhoneCentre`）。
 
 ## 已知限制
 
+- 桌面模式的主畫面與多工把按鍵送到該虛擬顯示器（`input -d`），是否有桌面或最近使用畫面依手機系統而定。
 - Samsung DeX 需要實體外接螢幕（或三星自己的無線 DeX），adb 建立的虛擬顯示器無法觸發；「桌面模式」改用 Android 的虛擬顯示器＋系統裝飾。若手機桌面程式不支援第二螢幕（例如 S10 / One UI 4），桌面上沒有背景與桌面圖示，改由視窗左側 App 列或工具列的小型啟動台開啟 App。
 - 調整獨立 App 視窗大小會重建虛擬顯示器，過程中 App 會短暫回到手機主螢幕。
 - 音訊轉送需要 Android 11 以上；「手機同時發聲」需要 Android 13 以上。
