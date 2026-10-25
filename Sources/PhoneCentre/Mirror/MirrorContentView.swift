@@ -14,6 +14,12 @@ enum MirrorLayout {
     static let minContentHeight: CGFloat = 560
     /// 主螢幕鏡像在直向時的視窗最小大小（含標題列；照使用者截圖量到的鏡像視窗：364×636）
     static let portraitMinFrameWidth: CGFloat = 364
+    /// 橫向時的視窗最小大小（含標題列）：636×364
+    static let landscapeMinFrameWidth: CGFloat = 636
+    static let landscapeMinFrameHeight: CGFloat = 364
+    /// 視窗內容高度低於這個值（視窗高度未滿 636）時，右側欄整排移到視窗底部
+    static let compactContentHeight: CGFloat = 608
+    static let bottomBarHeight: CGFloat = 64
     static let portraitMinFrameHeight: CGFloat = 636
 }
 
@@ -30,17 +36,33 @@ struct MirrorContentView: View {
         self.catalog = model.catalog
     }
 
+    private var videoArea: some View {
+        ZStack {
+            Color.black
+            MirrorViewRepresentable(view: model.view)
+            overlays
+            // 截圖：先全白再淡出
+            Color.white.opacity(model.flashOpacity).allowsHitTesting(false)
+        }
+    }
+
     var body: some View {
-        HStack(spacing: 0) {
-            ZStack {
-                Color.black
-                MirrorViewRepresentable(view: model.view)
-                overlays
-                // 截圖：先全白再淡出
-                Color.white.opacity(model.flashOpacity).allowsHitTesting(false)
+        GeometryReader { geo in
+            // 橫向模式且視窗高度未滿 636（內容高度 < 608）：右側欄整排移到視窗底部；直向模式永遠在右邊
+            let landscape = model.isVirtualDisplay ? geo.size.width > geo.size.height : model.frameSize.width > model.frameSize.height
+            if landscape && geo.size.height < MirrorLayout.compactContentHeight {
+                VStack(spacing: 0) {
+                    videoArea
+                    SideColumn(model: model, catalog: catalog, showVideoSettings: $showVideoSettings, showLocation: $showLocation, horizontal: true)
+                        .frame(height: MirrorLayout.bottomBarHeight)
+                }
+            } else {
+                HStack(spacing: 0) {
+                    videoArea
+                    SideColumn(model: model, catalog: catalog, showVideoSettings: $showVideoSettings, showLocation: $showLocation)
+                        .frame(width: MirrorLayout.railWidth)
+                }
             }
-            SideColumn(model: model, catalog: catalog, showVideoSettings: $showVideoSettings, showLocation: $showLocation)
-                .frame(width: MirrorLayout.railWidth)
         }
         .sheet(isPresented: $showPasswordSheet) {
             LockPasswordSheet(device: model.device)
@@ -102,6 +124,8 @@ struct MirrorContentView: View {
                     .font(.headline)
                 Button("打開") { model.reopenApp() }
                     .buttonStyle(.borderedProminent).controlSize(.large)
+                Button("關閉視窗") { model.onCloseWindow?() }
+                    .buttonStyle(.plain).foregroundStyle(.secondary)
             }
             .padding(24)
             .glassCard(cornerRadius: 18)
@@ -145,6 +169,8 @@ struct AppRail: View {
 
     @ObservedObject var catalog: AppCatalog
     var part: Part = .current
+    /// 在視窗底部橫向排列
+    var horizontal = false
     /// 「其他」盤子的高度與自然高度（由右側欄統一分配空間）
     var fixedHeight: CGFloat?
     var onNatural: ((CGFloat) -> Void)?
@@ -162,23 +188,33 @@ struct AppRail: View {
     var body: some View {
         switch part {
         case .current:
-            if let current { railIcon(current, running: true).padding(.vertical, 10).liquidPanel() }
+            if let current {
+                railIcon(current, running: true)
+                    .padding(.vertical, horizontal ? 4 : 10).padding(.horizontal, horizontal ? 8 : 0)
+                    .liquidPanel()
+            }
         case .others:
             if !otherOpened.isEmpty || !order.unopened.isEmpty {
-                ShrinkScroll(fixedHeight: fixedHeight, onNatural: onNatural) { othersList }.liquidPanel()
+                if horizontal {
+                    ArrowScroll(axis: .horizontal) { othersList }.liquidPanel()
+                } else {
+                    ShrinkScroll(fixedHeight: fixedHeight, onNatural: onNatural) { othersList }.liquidPanel()
+                }
             }
         }
     }
 
     private var othersList: some View {
-        VStack(spacing: 10) {
+        let layout = horizontal ? AnyLayout(HStackLayout(spacing: 10)) : AnyLayout(VStackLayout(spacing: 10))
+        return layout {
             ForEach(otherOpened, id: \.self) { railIcon($0, running: true) }
             if !otherOpened.isEmpty && !order.unopened.isEmpty {
-                GlassDivider(opacity: 0.55).padding(.horizontal, 10)
+                if horizontal { Rectangle().fill(Color.primary.opacity(0.55)).frame(width: 1, height: 30) }
+                else { GlassDivider(opacity: 0.55).padding(.horizontal, 10) }
             }
             ForEach(order.unopened, id: \.self) { railIcon($0, running: false) }
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, horizontal ? 4 : 10).padding(.horizontal, horizontal ? 8 : 0)
     }
 
     private func railIcon(_ pkg: String, running: Bool) -> some View {
@@ -186,10 +222,15 @@ struct AppRail: View {
         return ZStack {
             AppIconView(catalog: catalog, package: pkg, size: 38)
                 .opacity(dragging ? 0.4 : 1)
-            RunningMark(running: running, current: pkg == catalog.foreground, color: .white.opacity(0.8), vertical: true)
-                .frame(maxWidth: .infinity, alignment: .trailing).padding(.trailing, 3)
+            if horizontal {
+                RunningMark(running: running, current: pkg == catalog.foreground, color: .white.opacity(0.8))
+                    .frame(maxHeight: .infinity, alignment: .bottom)
+            } else {
+                RunningMark(running: running, current: pkg == catalog.foreground, color: .white.opacity(0.8), vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .trailing).padding(.trailing, 3)
+            }
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: horizontal ? nil : .infinity)
         .contentShape(Rectangle())
         .onTapGesture { onTap(pkg) }
         // 把圖示拖出 App 列放開 → 在獨立視窗開啟

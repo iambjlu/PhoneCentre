@@ -16,8 +16,15 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
     /// 主螢幕鏡像還原的畫面高度；第一次收到影像時依手機畫面比例算寬度
     private var savedMainVideoHeight: CGFloat?
 
-    private var chromeWidth: CGFloat { MirrorLayout.railWidth + 1 }
-    private var chromeHeight: CGFloat { MirrorLayout.toolbarHeight }
+    /// 視窗高度未滿 636（內容高度 < 608）時，右側欄移到視窗底部：寬度不佔、改佔底部一條的高度
+    /// （只有橫向模式才會；直向模式右側欄永遠在右邊）
+    private var compactNow: Bool {
+        guard let c = window?.contentLayoutRect.size else { return false }
+        let landscape = model.isVirtualDisplay ? c.width > c.height : model.frameSize.width > model.frameSize.height
+        return landscape && c.height < MirrorLayout.compactContentHeight
+    }
+    private var chromeWidth: CGFloat { compactNow ? 0 : MirrorLayout.railWidth + 1 }
+    private var chromeHeight: CGFloat { compactNow ? MirrorLayout.bottomBarHeight : MirrorLayout.toolbarHeight }
 
     @MainActor
     init(model: MirrorModel, topLeft: NSPoint? = nil) {
@@ -47,7 +54,7 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
                   [.minXMargin, .height])
         }
         window.tabbingMode = .disallowed
-        window.contentMinSize = NSSize(width: 240 + MirrorLayout.railWidth, height: MirrorLayout.minContentHeight)
+        window.contentMinSize = window.contentRect(forFrameRect: NSRect(x: 0, y: 0, width: MirrorLayout.portraitMinFrameWidth, height: MirrorLayout.portraitMinFrameHeight)).size
         window.setFrameAutosaveName("Mirror.\(model.device.id).\(model.appPackage ?? (model.desktopMode ? "desktop" : "main"))")
         // 虛擬顯示器視窗（獨立 App、桌面模式）記住上次的大小：先還原大小，再依需要移到指定位置
         let restored = window.setFrameUsingName(window.frameAutosaveName)
@@ -73,6 +80,7 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
         }
         super.init(window: window)
         window.delegate = self
+        updateMinSize()
         model.onFrameSize = { [weak self] size in self?.fit(to: size) }
         model.onRotateWindow = { [weak self] in self?.rotateWindow() }
         model.onCloseWindow = { [weak self] in self?.window?.performClose(nil) }
@@ -104,13 +112,7 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
     private func fit(to size: CGSize) {
         guard let window, size.width > 0, size.height > 0 else { return }
         window.title = model.title
-        // 主螢幕鏡像直向時，視窗高度不能比這個小（右側欄的圖示才放得下）；橫向沿用一般的最小高度
-        let portraitMin = window.contentRect(forFrameRect: NSRect(x: 0, y: 0, width: MirrorLayout.portraitMinFrameWidth, height: MirrorLayout.portraitMinFrameHeight)).size
-        if !model.isVirtualDisplay && size.height >= size.width {
-            window.contentMinSize = portraitMin
-        } else {
-            window.contentMinSize = NSSize(width: 240 + MirrorLayout.railWidth, height: MirrorLayout.minContentHeight)
-        }
+        updateMinSize()
         // 虛擬顯示器的大小是依視窗決定的，使用者調整過後就不要反過來改視窗
         if model.isVirtualDisplay && userResized { return }
         let screen = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
@@ -133,7 +135,11 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
         var videoW = videoH * aspect
         let maxW = screen.width * 0.9 - chromeWidth
         if videoW > maxW { videoW = maxW; videoH = videoW / aspect }
-        let content = NSSize(width: (videoW + chromeWidth).rounded(), height: (videoH + chromeHeight).rounded())
+        var content = NSSize(width: (videoW + MirrorLayout.railWidth + 1).rounded(), height: (videoH + MirrorLayout.toolbarHeight).rounded())
+        // 高度不到門檻：右側欄會移到底部橫條，影像區是整個寬度、下面多一條橫條
+        if size.width > size.height && content.height < MirrorLayout.compactContentHeight {
+            content = NSSize(width: videoW.rounded(), height: (videoH + MirrorLayout.bottomBarHeight).rounded())
+        }
         var frame = window.frameRect(forContentRect: NSRect(origin: .zero, size: content))
         frame.origin = NSPoint(x: window.frame.minX, y: window.frame.maxY - frame.height)
         frame.origin.x = min(max(frame.origin.x, screen.minX), screen.maxX - frame.width)
@@ -142,15 +148,50 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
         sizedOnce = true
     }
 
-    /// 主螢幕鏡像：縮放時維持影像比例；虛擬顯示器：自由調整
+    /// 所有鏡像視窗的大小限制（含標題列）：橫向最小 636×364、直向最小 364×636
+    private func minFrameSize(landscape: Bool) -> NSSize {
+        landscape
+            ? NSSize(width: MirrorLayout.landscapeMinFrameWidth, height: MirrorLayout.landscapeMinFrameHeight)
+            : NSSize(width: MirrorLayout.portraitMinFrameWidth, height: MirrorLayout.portraitMinFrameHeight)
+    }
+
+    /// 橫向或直向：主螢幕鏡像看手機畫面的比例，虛擬顯示器視窗看視窗自己的形狀
+    private func isLandscape(frame: NSSize? = nil) -> Bool {
+        if !model.isVirtualDisplay, model.frameSize.width > 0, model.frameSize.height > 0 {
+            return model.frameSize.width > model.frameSize.height
+        }
+        guard let window else { return false }
+        let f = frame ?? window.frame.size
+        return f.width > f.height
+    }
+
+    private func updateMinSize() {
+        guard let window else { return }
+        let f = minFrameSize(landscape: isLandscape())
+        window.contentMinSize = window.contentRect(forFrameRect: NSRect(origin: .zero, size: f)).size
+    }
+
+    func windowDidResize(_ notification: Notification) {
+        MainActor.assumeIsolated { updateMinSize() }
+    }
+
+    /// 主螢幕鏡像：縮放時維持影像比例；虛擬顯示器：自由調整；兩者都不能小於最小大小
     func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
-        if model.isVirtualDisplay { return frameSize }
+        let minF = minFrameSize(landscape: isLandscape(frame: frameSize))
+        if model.isVirtualDisplay { return NSSize(width: max(frameSize.width, minF.width), height: max(frameSize.height, minF.height)) }
         let size = model.frameSize
-        guard size.width > 0, size.height > 0 else { return frameSize }
+        guard size.width > 0, size.height > 0 else { return NSSize(width: max(frameSize.width, minF.width), height: max(frameSize.height, minF.height)) }
         let content = sender.contentRect(forFrameRect: NSRect(origin: .zero, size: frameSize)).size
-        let videoH = max(content.height - chromeHeight, 100)
-        let videoW = videoH * size.width / size.height
-        let fixed = NSSize(width: videoW + chromeWidth, height: videoH + chromeHeight)
+        let compact = size.width > size.height && content.height < MirrorLayout.compactContentHeight
+        let cw = compact ? 0 : MirrorLayout.railWidth + 1
+        let chh = compact ? MirrorLayout.bottomBarHeight : MirrorLayout.toolbarHeight
+        var videoH = max(content.height - chh, 100)
+        var videoW = videoH * size.width / size.height
+        // 維持影像比例的同時不能小於最小大小：兩邊都放大到夠為止
+        let minC = sender.contentRect(forFrameRect: NSRect(origin: .zero, size: minF)).size
+        let scale = max((minC.width - cw) / videoW, (minC.height - chh) / videoH, 1)
+        videoW *= scale; videoH *= scale
+        let fixed = NSSize(width: videoW + cw, height: videoH + chh)
         return sender.frameRect(forContentRect: NSRect(origin: .zero, size: fixed)).size
     }
 

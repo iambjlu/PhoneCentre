@@ -54,6 +54,8 @@ struct StatusIndicator: View {
     var size: CGFloat = 38
     /// 手機狀態還沒讀到之前不顯示任何（會是錯的）資訊，只轉圈圈
     var loaded = true
+    /// 放在視窗底部時：沒有上下留白
+    var compact = false
 
     private var level: Double { status.batteryLevel < 0 ? 0 : Double(status.batteryLevel) / 100 }
     private var ringColor: Color {
@@ -69,8 +71,8 @@ struct StatusIndicator: View {
         if loaded { indicator } else {
             ProgressView().controlSize(.small)
                 .frame(width: size, height: size)
-                .padding(.top, 22)
-                .padding(.bottom, 4)
+                .padding(.top, compact ? 0 : 22)
+                .padding(.bottom, compact ? 0 : 4)
         }
     }
 
@@ -114,8 +116,8 @@ struct StatusIndicator: View {
             center.offset(y: -size * 0.02)
         }
         .frame(width: size, height: size)
-        .padding(.top, 22)
-        .padding(.bottom, 4)
+        .padding(.top, compact ? 0 : 22)
+        .padding(.bottom, compact ? 0 : 4)
         .help(status.summary)
     }
 
@@ -261,6 +263,8 @@ struct SideColumn: View {
     @ObservedObject var catalog: AppCatalog
     @Binding var showVideoSettings: Bool
     @Binding var showLocation: Bool
+    /// 視窗高度不夠時，整排移到視窗底部橫向排列
+    var horizontal = false
     @State private var showLauncher = false
     @State private var showSound = false
     // 右側欄分配空間用的量測（高度）
@@ -270,7 +274,42 @@ struct SideColumn: View {
     @State private var keysH: CGFloat = 0
     @ObservedObject private var location = LocationSimulation.shared
 
+    private var stack1: AnyLayout { horizontal ? AnyLayout(HStackLayout(spacing: 1)) : AnyLayout(VStackLayout(spacing: 1)) }
+
     var body: some View {
+        if horizontal { bottomBar } else { column }
+    }
+
+    /// 視窗底部的橫條：狀態環、現在在用的 App、其他、導覽項目（可左右捲動）、金剛三鍵（固定在最右邊）
+    private var bottomBar: some View {
+        HStack(spacing: 8) {
+            StatusIndicator(status: model.status, size: 34, loaded: model.statusLoaded, compact: true)
+                .contentShape(Rectangle())
+                .onTapGesture { if !model.isVirtualDisplay { model.session?.send(.expandNotifications) } }
+            glassGroup {
+                HStack(spacing: 8) {
+                    if model.isAppWindow, let pkg = model.appPackage {
+                        AppIconView(catalog: catalog, package: pkg, size: 34)
+                            .padding(.horizontal, 8).padding(.vertical, 4).liquidPanel()
+                    } else {
+                        AppRail(catalog: catalog, part: .current, horizontal: true) { pkg in model.launch(pkg) }
+                        AppRail(catalog: catalog, part: .others, horizontal: true) { pkg in model.launch(pkg) }
+                    }
+                    ArrowScroll(axis: .horizontal) { navItems }
+                        .liquidPanel()
+                        .disabled(model.appClosed).opacity(model.appClosed ? 0.4 : 1)
+                    navKeys.padding(.horizontal, 4).liquidPanel()
+                        .disabled(model.appClosed).opacity(model.appClosed ? 0.4 : 1)
+                }
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .environment(\.colorScheme, .dark)
+        .background { GlassBackground() }
+    }
+
+    private var column: some View {
         VStack(spacing: 8) {
             StatusIndicator(status: model.status, loaded: model.statusLoaded)
                 .contentShape(Rectangle())
@@ -352,7 +391,7 @@ struct SideColumn: View {
 
     /// 可捲動的導覽項目（金剛三鍵以外）
     private var navItems: some View {
-        VStack(spacing: 1) {
+        stack1 {
             NavButton(help: "畫質設定") { showVideoSettings.toggle() } icon: { sfIcon("environments.circle") }
                 .popover(isPresented: $showVideoSettings) {
                     VideoSettingsPopover(options: model.videoOptions) { model.applyVideoOptions($0) }
@@ -410,7 +449,7 @@ struct SideColumn: View {
 
     /// 金剛三鍵：固定在最下面
     private var navKeys: some View {
-        VStack(spacing: 1) {
+        stack1 {
             NavButton(help: "返回（右鍵／Esc）") { model.navBack() } icon: { SamsungNavIcon.Back() }
             homeButton
             recentsButton

@@ -511,8 +511,22 @@ final class MirrorModel: ObservableObject {
             }
             return
         }
+        // 已顯示「已關閉」，但使用者在手機上自己把這個 App 重新打開了（跑在主螢幕）：搬回這個視窗並收起提示
+        if appClosed, let app = appPackage, await topResumedPackage() == app {
+            appClosed = false; closedSnapshot = nil
+            appSeen = false; emptyChecks = 0
+            await ensureAppOnDisplay(app, display: d)
+            return
+        }
         emptyChecks += 1
         if appSeen, emptyChecks >= 2, !appClosed { appClosed = true }
+    }
+
+    /// 目前在手機最上層（resumed）的 App 套件名
+    private func topResumedPackage() async -> String? {
+        let out = (try? await device.client.shell("dumpsys activity activities | grep -m1 -E 'topResumedActivity=|mResumedActivity:'")) ?? ""
+        guard let r = out.range(of: #"u\d+ [A-Za-z0-9_.]+/"#, options: .regularExpression) else { return nil }
+        return out[r].split(separator: " ").last.map { String($0.dropLast()) }
     }
 
     func reopenApp() {
