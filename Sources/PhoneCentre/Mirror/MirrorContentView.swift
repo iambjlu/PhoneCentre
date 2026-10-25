@@ -212,12 +212,12 @@ struct AppRail: View {
             })
         .help(catalog.label(for: pkg))
         .contextMenu {
+            Button("強制停止") { Task { await catalog.forceStop(pkg) } }
+            Button("在獨立視窗開啟") { WindowManager.shared.openApp(catalog.device, package: pkg) }
+            Divider()
             Button(settings.isPinned(pkg, on: catalog.device) ? "移除喜好項目" : "加入喜好項目") {
                 settings.togglePin(pkg, on: catalog.device)
             }
-            Divider()
-            Button("在獨立視窗開啟") { WindowManager.shared.openApp(catalog.device, package: pkg) }
-            Button("強制停止") { Task { await catalog.forceStop(pkg) } }
         }
     }
 }
