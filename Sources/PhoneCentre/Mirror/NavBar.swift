@@ -294,7 +294,8 @@ struct SideColumn: View {
                             AppIconView(catalog: catalog, package: pkg, size: 34)
                             if barWidth > 900 {
                                 Text(model.appLabel ?? catalog.label(for: pkg)).font(.system(size: 12, weight: .medium))
-                                    .lineLimit(1).frame(maxWidth: 140, alignment: .leading)
+                                    .lineLimit(1).frame(maxWidth: 140)
+                                    .fixedSize(horizontal: true, vertical: false)   // 盤子貼著圖示與名稱的寬度，不撐長
                                     .foregroundStyle(.white.opacity(0.9))
                             }
                         }

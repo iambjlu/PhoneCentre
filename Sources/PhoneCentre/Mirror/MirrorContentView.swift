@@ -195,7 +195,8 @@ struct AppRail: View {
                     railIcon(current, running: true)
                     if horizontal && showName {
                         Text(catalog.label(for: current)).font(.system(size: 12, weight: .medium))
-                            .lineLimit(1).frame(maxWidth: 110, alignment: .leading)
+                            .lineLimit(1).frame(maxWidth: 110)
+                            .fixedSize(horizontal: true, vertical: false)   // 盤子貼著圖示與名稱的寬度，不撐長
                             .foregroundStyle(.white.opacity(0.9))
                     }
                 }
