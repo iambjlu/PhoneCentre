@@ -30,7 +30,8 @@ struct MainView: View {
         // 側邊欄固定顯示：用固定的可見狀態，並拿掉收合按鈕
         NavigationSplitView(columnVisibility: .constant(.all)) {
             sidebar
-                .navigationSplitViewColumnWidth(236)
+                .frame(width: 236)   // 寬度鎖死：只用 navigationSplitViewColumnWidth 會在視窗縮小或重新開啟時被縮成最小
+                .navigationSplitViewColumnWidth(min: 236, ideal: 236, max: 236)
                 .toolbar(removing: .sidebarToggle)
         } detail: {
             detail

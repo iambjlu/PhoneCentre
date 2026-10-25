@@ -21,6 +21,7 @@ struct PhoneDataView: View {
     @State private var query = ""
     @State private var showOngoing = false
     @State private var confirmDelete = false
+    @State private var openTarget: PhoneNotification?
 
     init(device: Device, kind: DataKind) {
         self.device = device
@@ -48,6 +49,16 @@ struct PhoneDataView: View {
                 content(b)
             }
             .task(id: device.id) { await store.sync(device) }
+            .alert("要打開「\(openTarget.map { catalog.label(for: $0.package) } ?? "")」嗎？",
+                   isPresented: Binding(get: { openTarget != nil }, set: { if !$0 { openTarget = nil } })) {
+                Button("打開") {
+                    if let n = openTarget { WindowManager.shared.openApp(device, package: n.package) }
+                    openTarget = nil
+                }
+                Button("取消", role: .cancel) { openTarget = nil }
+            } message: {
+                Text("會在獨立視窗開啟這個 App。")
+            }
             .confirmationDialog("刪除這台手機已保存的簡訊、通知與通話記錄？", isPresented: $confirmDelete) {
                 Button("刪除", role: .destructive) { store.deleteAll(for: device) }
             }
@@ -135,6 +146,8 @@ struct PhoneDataView: View {
                             if !n.text.isEmpty { Text(n.text).textSelection(.enabled) }
                         }
                     }
+                    .contentShape(Rectangle())
+                    .onTapGesture { openTarget = n }
                 }
                 .task(id: Set(list.map(\.package))) {
                     if catalog.apps.isEmpty { await catalog.reload() }

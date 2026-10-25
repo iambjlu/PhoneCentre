@@ -1,6 +1,15 @@
 import Foundation
 
 /// 手機狀態：電池、網路（Wi-Fi 或行動網路世代）、主要 SIM 卡訊號格數
+struct SimInfo: Equatable {
+    var slot = 1
+    var carrier = ""
+    var tech = ""              // 例如「LTE」「5G」
+    var dbm: Int?
+    var bars = 0
+    var inService = false
+}
+
 struct DeviceStatus: Equatable {
     var batteryLevel = -1          // 0...100，-1 = 未知
     var charging = false
@@ -19,6 +28,8 @@ struct DeviceStatus: Equatable {
     var batteryStatus = -1
     var pluggedIn = false
     var carrier = ""
+    /// 有插卡的每個卡槽（雙卡就兩筆）
+    var sims: [SimInfo] = []
     var radioTech = ""             // 例如「LTE」「5G」
     var signalDbm: Int?
     var wifiSSID = ""
@@ -87,15 +98,16 @@ struct DeviceStatus: Equatable {
             }
         }
 
-        if s.wifi, let r = (sections["wifi"] ?? []).first, let rssi = Int(r.replacingOccurrences(of: "RSSI:", with: "").trimmingCharacters(in: .whitespaces)) {
+        if s.wifi, let r = (sections["wifi"] ?? []).first(where: { $0.hasPrefix("RSSI:") }), let rssi = Int(r.replacingOccurrences(of: "RSSI:", with: "").trimmingCharacters(in: .whitespaces)) {
             // 同 Android 的 calculateSignalLevel：-100…-55 dBm 對應 0…4 格
             s.wifiLevel = max(0, min(4, (rssi + 100) * 4 / 45))
         } else if s.wifi { s.wifiLevel = 4 }
         // Wi-Fi 名稱與 IP
-        if let info = sections["wifiinfo"]?.first, let r = info.range(of: "SSID: \"") {
+        // grep 提早結束時 dumpsys 會多印一行「Failed to write … Broken pipe」，所以要找含 SSID 的那一行，不能直接取第一行
+        if let info = sections["wifiinfo"]?.first(where: { $0.contains("SSID: \"") }), let r = info.range(of: "SSID: \"") {
             s.wifiSSID = String(info[r.upperBound...].prefix { $0 != "\"" })
         }
-        if let l = sections["ip"]?.first, let r = l.range(of: "inet ") {
+        if let l = sections["ip"]?.first(where: { $0.contains("inet ") }), let r = l.range(of: "inet ") {
             s.wifiIP = String(l[r.upperBound...].prefix { $0 != "/" && $0 != " " })
         }
         // 電池循環次數與容量（sysfs；各家欄位不同）
@@ -121,40 +133,57 @@ struct DeviceStatus: Equatable {
             if l.hasPrefix("  Phone Id=") { phones.append([]) }
             else if !phones.isEmpty { phones[phones.count - 1].append(l) }
         }
-        let primary = phones.first { $0.contains { $0.contains("mDataConnectionState=2") } } ?? phones.first
-        if let primary {
-            if let svc = primary.first(where: { $0.contains("mServiceState=") }) {
-                s.inService = svc.contains("mVoiceRegState=0") || svc.contains("mDataRegState=0")
-                if s.cellularTech == nil, s.wifi == false { /* 沒有網路 */ }
-            }
-            if let svc = primary.first(where: { $0.contains("mServiceState=") }) {
-                // 「getRilDataRadioTechnology=14(LTE)」→ LTE；NR 顯示 5G
-                for key in ["getRilDataRadioTechnology=", "getRilVoiceRadioTechnology="] {
-                    guard let r = svc.range(of: key), let o = svc[r.upperBound...].firstIndex(of: "(") else { continue }
-                    let name = String(svc[svc.index(after: o)...].prefix { $0 != ")" })
-                    if !name.isEmpty, name != "Unknown" { s.radioTech = name.hasPrefix("NR") ? "5G" : name; break }
-                }
-            }
-            if let cell = primary.first(where: { $0.contains("mCellInfo=") }),
-               let reg = cell.range(of: "mRegistered=YES"), let a = cell[reg.upperBound...].range(of: "mAlphaLong=") {
-                s.carrier = String(cell[a.upperBound...].prefix { $0 != " " && $0 != "}" })
-            }
-            if let sig = primary.first(where: { $0.contains("mSignalStrength=") }) {
-                for key in ["rsrp=", "ssRsrp=", "rssi="] {
-                    if let r = sig.range(of: key) {
-                        let n = Int(sig[r.upperBound...].prefix { $0 == "-" || $0.isNumber }) ?? 0
-                        if n < 0, n > -200 { s.signalDbm = n; break }
-                    }
-                }
-                // 三星的狀態列用 SignalBarInfo 的格數（例如 lteLevel=4），沒有才用標準的 level=
-                if let r = sig.range(of: "SignalBarInfo{"), let l = sig[r.upperBound...].range(of: "Level=") {
-                    s.signalBars = min(4, Int(sig[l.upperBound...].prefix { $0.isNumber }) ?? 0)
-                } else if let r = sig.range(of: "level=") {
-                    s.signalBars = min(4, Int(sig[r.upperBound...].prefix { $0.isNumber }) ?? 0)
-                }
-            }
+        let parsed = phones.map(parsePhone)
+        // 每個有插卡的卡槽各一筆（雙卡時「總覽」會分開列出）
+        s.sims = parsed.enumerated().compactMap { i, p in
+            var p = p
+            p.slot = i + 1
+            if simStates.count == parsed.count, ["ABSENT", "UNKNOWN", ""].contains(simStates[i]) { return nil }
+            return p
+        }
+        let primaryIndex = phones.firstIndex { $0.contains { $0.contains("mDataConnectionState=2") } } ?? (phones.isEmpty ? nil : 0)
+        if let i = primaryIndex {
+            let p = parsed[i]
+            s.inService = p.inService
+            s.radioTech = p.tech
+            s.carrier = p.carrier
+            s.signalDbm = p.dbm
+            s.signalBars = p.bars
         }
         return s
+    }
+
+    /// 解析一個卡槽（telephony.registry 的一個 Phone Id 區塊）
+    private static func parsePhone(_ lines: [String]) -> SimInfo {
+        var p = SimInfo()
+        if let svc = lines.first(where: { $0.contains("mServiceState=") }) {
+            p.inService = svc.contains("mVoiceRegState=0") || svc.contains("mDataRegState=0")
+            // 「getRilDataRadioTechnology=14(LTE)」→ LTE；NR 顯示 5G
+            for key in ["getRilDataRadioTechnology=", "getRilVoiceRadioTechnology="] {
+                guard let r = svc.range(of: key), let o = svc[r.upperBound...].firstIndex(of: "(") else { continue }
+                let name = String(svc[svc.index(after: o)...].prefix { $0 != ")" })
+                if !name.isEmpty, name != "Unknown" { p.tech = name.hasPrefix("NR") ? "5G" : name; break }
+            }
+        }
+        if let cell = lines.first(where: { $0.contains("mCellInfo=") }),
+           let reg = cell.range(of: "mRegistered=YES"), let a = cell[reg.upperBound...].range(of: "mAlphaLong=") {
+            p.carrier = String(cell[a.upperBound...].prefix { $0 != " " && $0 != "}" })
+        }
+        if let sig = lines.first(where: { $0.contains("mSignalStrength=") }) {
+            for key in ["rsrp=", "ssRsrp=", "rssi="] {
+                if let r = sig.range(of: key) {
+                    let n = Int(sig[r.upperBound...].prefix { $0 == "-" || $0.isNumber }) ?? 0
+                    if n < 0, n > -200 { p.dbm = n; break }
+                }
+            }
+            // 三星的狀態列用 SignalBarInfo 的格數（例如 lteLevel=4），沒有才用標準的 level=
+            if let r = sig.range(of: "SignalBarInfo{"), let l = sig[r.upperBound...].range(of: "Level=") {
+                p.bars = min(4, Int(sig[l.upperBound...].prefix { $0.isNumber }) ?? 0)
+            } else if let r = sig.range(of: "level=") {
+                p.bars = min(4, Int(sig[r.upperBound...].prefix { $0.isNumber }) ?? 0)
+            }
+        }
+        return p
     }
 
     private static func generation(_ rat: String) -> String {

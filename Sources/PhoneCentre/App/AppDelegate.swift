@@ -52,12 +52,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                              styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                              backing: .buffered, defer: false)
             w.title = "PhoneCentre"
-            w.minSize = NSSize(width: 1020, height: 830)
             w.isReleasedWhenClosed = false
             // 標準視窗與標準元件：用最新 SDK 連結，系統會自動套用 Liquid Glass（側邊欄、工具列、分頁、按鈕）
             w.isOpaque = false
             w.backgroundColor = .clear   // 視窗底部的系統材質才看得到後面的桌面
-            w.contentView = NSHostingView(rootView: MainView())
+            let hosting = NSHostingView(rootView: MainView())
+            w.contentView = hosting
+            w.minSize = NSSize(width: 1020, height: 830)
             // 視窗底層墊一層真正的桌面模糊（NSVisualEffectView）；SwiftUI 內容保持系統預設、不加自訂底色
             let blur = NSVisualEffectView()
             blur.material = .underWindowBackground

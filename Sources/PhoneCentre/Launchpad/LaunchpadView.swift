@@ -1,12 +1,38 @@
 import SwiftUI
 
+/// 啟動台的分組索引：英文字母 A–Z → 注音 ㄅ–ㄦ → 其他（#）
+enum AppIndex {
+    static let bopomofo = Array("ㄅㄆㄇㄈㄉㄊㄋㄌㄍㄎㄏㄐㄑㄒㄓㄔㄕㄖㄗㄘㄙㄧㄨㄩㄚㄛㄜㄝㄞㄟㄠㄡㄢㄣㄤㄥㄦ").map(String.init)
+    static let order: [String] = (65...90).map { String(UnicodeScalar($0)!) } + bopomofo + ["#"]
+    nonisolated(unsafe) private static var cache: [String: String] = [:]
+
+    static func key(for label: String) -> String {
+        guard let f = label.first else { return "#" }
+        let first = String(f)
+        if let k = cache[first] { return k }
+        var k = "#"
+        if f.isASCII {
+            if f.isLetter { k = first.uppercased() }
+        } else if let py = first.applyingTransform(.mandarinToLatin, reverse: false),
+                  let bp = py.applyingTransform(StringTransform("Latin-Bopomofo"), reverse: false),
+                  let c = bp.first, bopomofo.contains(String(c)) {
+            k = String(c)
+        } else if let c = first.applyingTransform(.toLatin, reverse: false)?.first, c.isASCII, c.isLetter {
+            k = String(c).uppercased()   // 日文、韓文、西里爾字母等轉成拉丁字母後歸類
+        }
+        cache[first] = k
+        return k
+    }
+
+    static func rank(_ k: String) -> Int { order.firstIndex(of: k) ?? order.count }
+}
+
 /// 類似 Mac 新版啟動台：上方開啟方式選單＋搜尋，下面 App 圖示格
 struct LaunchpadView: View {
     let device: Device
     @ObservedObject var catalog: AppCatalog
     @ObservedObject private var settings = AppSettings.shared
     @State private var query = ""
-    @State private var filter = 0     // 0 全部、1 使用者、2 系統
     @State private var confirmUninstall: AppEntry?
 
     private var pins: [String] { settings.pinned(for: device) }
@@ -17,9 +43,15 @@ struct LaunchpadView: View {
 
     private var filteredApps: [AppEntry] {
         catalog.apps.filter { a in
-            (filter == 0 || (filter == 1 && !a.isSystem) || (filter == 2 && a.isSystem))
-                && (query.isEmpty || a.label.localizedCaseInsensitiveContains(query) || a.package.localizedCaseInsensitiveContains(query))
+            query.isEmpty || a.label.localizedCaseInsensitiveContains(query) || a.package.localizedCaseInsensitiveContains(query)
         }
+    }
+
+    /// 依索引分組（A–Z、ㄅ–ㄦ、#），組內照名稱排序
+    private func grouped(_ apps: [AppEntry]) -> [(key: String, apps: [AppEntry])] {
+        Dictionary(grouping: apps) { AppIndex.key(for: $0.label) }
+            .map { (key: $0.key, apps: $0.value.sorted { $0.label.localizedStandardCompare($1.label) == .orderedAscending }) }
+            .sorted { AppIndex.rank($0.key) < AppIndex.rank($1.key) }
     }
 
     var body: some View {
@@ -29,10 +61,6 @@ struct LaunchpadView: View {
                     ForEach(AppLaunchTarget.allCases) { Text($0.title).tag($0) }
                 }
                 .fixedSize()
-                Picker("", selection: $filter) {
-                    Text("全部").tag(0); Text("使用者").tag(1); Text("系統").tag(2)
-                }
-                .pickerStyle(.segmented).labelsHidden().fixedSize()
                 Spacer()
                 HStack {
                     Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
@@ -51,22 +79,7 @@ struct LaunchpadView: View {
             } else if let e = catalog.error, catalog.apps.isEmpty {
                 Spacer(); Text(e).foregroundStyle(.secondary); Spacer()
             } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 26) {
-                        if query.isEmpty && filter == 0 {
-                            // 喜好項目、已開啟的 App 獨立成區，其餘放在「所有 App」
-                            let pinnedApps = entries(pins)
-                            let openApps = entries(catalog.running.filter { !pins.contains($0) })
-                            let taken = Set(pinnedApps.map(\.package) + openApps.map(\.package))
-                            section("喜好項目", pinnedApps)
-                            section("已開啟", openApps)
-                            section(pinnedApps.isEmpty && openApps.isEmpty ? nil : "所有 App", filteredApps.filter { !taken.contains($0.package) })
-                        } else {
-                            section(nil, filteredApps)
-                        }
-                    }
-                    .padding(20)
-                }
+                content
             }
         }
         .task(id: device.id) {
@@ -81,12 +94,65 @@ struct LaunchpadView: View {
         }
     }
 
+    /// 沒有搜尋時：喜好項目、已開啟、依索引分組的所有 App，右邊有 A–Z／ㄅ–ㄦ 索引列可以快速跳轉
+    private var content: some View {
+        ScrollViewReader { proxy in
+            let pinnedApps = entries(pins)
+            let openApps = entries(catalog.running.filter { !pins.contains($0) })
+            let taken = Set(pinnedApps.map(\.package) + openApps.map(\.package))
+            let groups = grouped(filteredApps.filter { query.isEmpty ? !taken.contains($0.package) : true })
+            ScrollView {
+                VStack(alignment: .leading, spacing: 26) {
+                    if query.isEmpty {
+                        section("喜好項目", pinnedApps)
+                        section("已開啟", openApps)
+                        if !groups.isEmpty, !(pinnedApps.isEmpty && openApps.isEmpty) {
+                            Text("所有 App").font(.headline).foregroundStyle(.secondary).padding(.bottom, -12)
+                        }
+                        ForEach(groups, id: \.key) { g in
+                            section(g.key, g.apps, small: true).id("idx-\(g.key)")
+                        }
+                    } else {
+                        section(nil, filteredApps.sorted { $0.label.localizedStandardCompare($1.label) == .orderedAscending })
+                    }
+                }
+                .padding(.vertical, 20)
+                .padding(.leading, 20)
+                .padding(.trailing, 36)
+            }
+            .overlay(alignment: .trailing) {
+                if query.isEmpty, groups.count > 1 { indexRail(groups.map(\.key), proxy) }
+            }
+        }
+    }
+
+    private func indexRail(_ keys: [String], _ proxy: ScrollViewProxy) -> some View {
+        GeometryReader { geo in
+            let step = max(min(geo.size.height / CGFloat(keys.count), 16), 9)
+            VStack(spacing: 0) {
+                ForEach(keys, id: \.self) { k in
+                    Text(k).font(.system(size: min(step - 1, 11), weight: .semibold)).foregroundStyle(.secondary)
+                        .frame(width: 22, height: step)
+                }
+            }
+            .background(.quaternary.opacity(0.5), in: Capsule())
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0).onChanged { v in
+                let i = min(max(Int(v.location.y / step), 0), keys.count - 1)
+                proxy.scrollTo("idx-\(keys[i])", anchor: .top)
+            })
+            .frame(maxHeight: .infinity, alignment: .center)
+        }
+        .frame(width: 22)
+        .padding(.trailing, 8)
+    }
+
     @ViewBuilder
-    private func section(_ title: String?, _ apps: [AppEntry]) -> some View {
+    private func section(_ title: String?, _ apps: [AppEntry], small: Bool = false) -> some View {
         if !apps.isEmpty {
             VStack(alignment: .leading, spacing: 14) {
                 if let title {
-                    Text(title).font(.headline).foregroundStyle(.secondary)
+                    Text(title).font(small ? .subheadline.weight(.semibold) : .headline).foregroundStyle(.secondary)
                 }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 96, maximum: 120), spacing: 18)], alignment: .leading, spacing: 22) {
                     ForEach(apps) { cell($0) }

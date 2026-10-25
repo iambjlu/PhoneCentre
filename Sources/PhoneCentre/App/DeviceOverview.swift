@@ -42,7 +42,11 @@ struct DeviceOverview: View {
                         row("Android", device.info.map { "\($0.androidVersion)（API \($0.sdk)）" } ?? "—")
                         row("螢幕", device.info.map { "\($0.screenSize) · \($0.density) dpi" } ?? "—")
                         if let d = manufactureText { row("生產日期", d) }
-                        row("電信業者", carrierText)
+                        if status.sims.count > 1 {
+                            ForEach(status.sims, id: \.slot) { row("SIM \($0.slot)", simText($0)) }
+                        } else {
+                            row("電信業者", carrierText)
+                        }
                         row("Wi-Fi", wifiText)
                         row("電池", batteryText)
                         if let c = capacityText { row("電池容量", c) }
@@ -95,13 +99,17 @@ struct DeviceOverview: View {
         return "\(d.prefix(4))/\(d.dropFirst(4).prefix(2))/\(d.suffix(2))"
     }
 
+    private func simText(_ sim: SimInfo) -> String {
+        var parts: [String] = []
+        if !sim.carrier.isEmpty { parts.append(sim.carrier) }
+        if !sim.tech.isEmpty { parts.append(sim.tech) }
+        if let d = sim.dbm { parts.append("\(d)dBm") }
+        return parts.isEmpty ? (sim.inService ? "—" : "沒有服務") : parts.joined(separator: " ")
+    }
+
     private var carrierText: String {
         guard status.hasSim else { return "沒有 SIM 卡" }
-        var parts: [String] = []
-        if !status.carrier.isEmpty { parts.append(status.carrier) }
-        if !status.radioTech.isEmpty { parts.append(status.radioTech) }
-        if let d = status.signalDbm { parts.append("\(d)dBm") }
-        return parts.isEmpty ? (status.inService ? "—" : "沒有服務") : parts.joined(separator: " ")
+        return simText(status.sims.first ?? SimInfo(carrier: status.carrier, tech: status.radioTech, dbm: status.signalDbm, inService: status.inService))
     }
 
     private var wifiText: String {
