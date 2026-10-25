@@ -88,8 +88,8 @@ struct MirrorContentView: View {
             // 最後一幀霧化當背景
             if let snap = model.closedSnapshot {
                 Image(nsImage: snap).resizable().scaledToFill()
-                    .blur(radius: 24)
-                    .overlay(Rectangle().fill(.ultraThinMaterial))
+                    .blur(radius: 8)
+                    .overlay(Rectangle().fill(Color.black.opacity(0.25)))
                     .clipped()
                     .allowsHitTesting(false)
             }
