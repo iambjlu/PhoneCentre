@@ -100,6 +100,7 @@ Sources/PhoneCentre/           Swift 原始碼（下面各章節；PhoneData 為
 
 ### Device.swift
 `Device`（serial、狀態、型號、端點，id 遠端為 `<remoteID>|serial`）與 `DeviceInfo`（裝置名稱、廠牌、型號、Android 版本、SDK、ro.serialno、螢幕大小、密度）。
+`DeviceInfo.fetch` 每個欄位加名稱再解析，並丟掉錯誤訊息（手機剛開機、settings 服務還沒起來時會印「cmd: Can't find service: settings」）；型號、版本、SDK 不合理就回傳 nil，由 `DeviceManager` 下次輪詢重試，不把壞資料存進快取。總覽的手機狀態每 10 秒更新一次。
 
 ### DeviceManager.swift
 每 2 秒輪詢所有端點的 `host:devices-l`。

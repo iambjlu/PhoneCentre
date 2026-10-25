@@ -82,7 +82,13 @@ struct DeviceOverview: View {
             .frame(maxWidth: 760, alignment: .leading)
             .frame(maxWidth: .infinity)   // 捲動內容撐滿寬度，工具列後面的邊緣效果才不會只有 760 寬一塊
         }
-        .task(id: device.id) { await loadStatus() }
+        .task(id: device.id) {
+            // 載入後每 10 秒更新一次（電池、訊號會變；手機剛開機、服務還沒起來時第一次可能失敗）
+            while !Task.isCancelled {
+                await loadStatus()
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
+            }
+        }
         .sheet(isPresented: $showPassword) { LockPasswordSheet(device: device) }
     }
 

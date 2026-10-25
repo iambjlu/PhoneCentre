@@ -83,20 +83,30 @@ struct DeviceInfo: Hashable {
     var screenSize: String
     var density: Int
 
+    /// 每個欄位都加上名稱再解析，並丟掉錯誤訊息（例如手機剛開機、settings 服務還沒起來時會印
+    /// 「cmd: Can't find service: settings」），關鍵欄位不合理就回傳 nil，讓呼叫端稍後重試，不要把壞資料存起來
     static func fetch(_ c: AdbClient) async -> DeviceInfo? {
         let script = """
-        echo "$(settings get global device_name)"; getprop ro.product.manufacturer; getprop ro.product.model; \
-        getprop ro.build.version.release; getprop ro.build.version.sdk; getprop ro.serialno; wm size | tail -1; \
-        wm density | tail -1
+        echo "name=$(settings get global device_name 2>/dev/null)"; echo "mfr=$(getprop ro.product.manufacturer)"; \
+        echo "model=$(getprop ro.product.model)"; echo "ver=$(getprop ro.build.version.release)"; \
+        echo "sdk=$(getprop ro.build.version.sdk)"; echo "sn=$(getprop ro.serialno)"; \
+        echo "size=$(wm size 2>/dev/null | tail -1)"; echo "dpi=$(wm density 2>/dev/null | tail -1)"
         """
         guard let out = try? await c.shell(script) else { return nil }
-        let l = out.split(separator: "\n", omittingEmptySubsequences: false).map { $0.trimmingCharacters(in: .whitespaces) }
-        guard l.count >= 6 else { return nil }
-        let name = l[0] == "null" ? "" : l[0]
-        return DeviceInfo(deviceName: name, manufacturer: l[1], model: l[2], androidVersion: l[3],
-                          sdk: Int(l[4]) ?? 0, serialNo: l[5],
-                          screenSize: l.count > 6 ? afterColon(l[6]) : "",
-                          density: l.count > 7 ? Int(afterColon(l[7])) ?? 420 : 420)
+        var kv: [String: String] = [:]
+        for line in out.split(separator: "\n") {
+            guard let eq = line.firstIndex(of: "=") else { continue }
+            kv[String(line[..<eq])] = String(line[line.index(after: eq)...]).trimmingCharacters(in: .whitespaces)
+        }
+        guard let sdk = Int(kv["sdk"] ?? ""), sdk > 0, let model = kv["model"], !model.isEmpty,
+              let ver = kv["ver"], !ver.isEmpty else { return nil }
+        var name = kv["name"] ?? ""
+        if name == "null" || name.contains("Can't find service") || name.hasPrefix("cmd:") { name = "" }
+        let size = kv["size"].map(afterColon) ?? ""
+        return DeviceInfo(deviceName: name, manufacturer: kv["mfr"] ?? "", model: model, androidVersion: ver,
+                          sdk: sdk, serialNo: kv["sn"] ?? "",
+                          screenSize: size.contains("x") ? size : "",
+                          density: kv["dpi"].flatMap { Int(afterColon($0)) } ?? 420)
     }
 
     /// 「Physical size: 1080x2280」→「1080x2280」
