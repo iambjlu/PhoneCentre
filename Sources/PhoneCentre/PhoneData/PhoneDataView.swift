@@ -63,7 +63,13 @@ struct PhoneDataView: View {
     private func header(_ b: PhoneDataBundle) -> some View {
         VStack(spacing: 8) {
             HStack {
-                TextField("搜尋", text: $query).textFieldStyle(.roundedBorder).frame(maxWidth: 220)
+                HStack {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    TextField("搜尋", text: $query).textFieldStyle(.plain)
+                }
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .background(.quaternary, in: Capsule())
+                .frame(width: 240)
                 Spacer()
                 if store.syncing.contains(CacheManager.key(for: device)) { ProgressView().controlSize(.small) }
                 Button { Task { await store.sync(device) } } label: { Label("立即更新", systemImage: "arrow.clockwise") }
@@ -129,7 +135,6 @@ struct PhoneDataView: View {
                             if !n.text.isEmpty { Text(n.text).textSelection(.enabled) }
                         }
                     }
-                    .padding(.vertical, 3)
                 }
                 .task(id: Set(list.map(\.package))) {
                     if catalog.apps.isEmpty { await catalog.reload() }
@@ -163,15 +168,20 @@ struct PhoneDataView: View {
         }
     }
 
-    /// 內容用一般清單（有分隔線），放在比上方玻璃控制列低一層的底板上，才有層級感
+    /// 跟簡訊對話列表同一種風格：一塊液態玻璃面板，列與列之間有分隔線
     private func listPanel<T: Identifiable, R: View>(_ items: [T], @ViewBuilder row: @escaping (T) -> R) -> some View {
-        List(items) { item in
-            row(item).padding(.vertical, 4)
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                ForEach(items) { item in
+                    row(item)
+                        .padding(.horizontal, 14).padding(.vertical, 10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if item.id != items.last?.id { Divider().padding(.horizontal, 14) }
+                }
+            }
+            .padding(.vertical, 6)
         }
-        .listStyle(.inset)
-        .scrollContentBackground(.hidden)
-        .background(.black.opacity(0.18))
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .liquidPanel(cornerRadius: 22)
         .padding(.horizontal, 12)
         .padding(.bottom, 12)
     }

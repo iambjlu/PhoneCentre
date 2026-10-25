@@ -39,7 +39,7 @@ struct PhoneSMSView: View {
     private func conversationList(_ list: [Conversation]) -> some View {
         let current = selected ?? list.first?.id
         return ScrollView {
-            LazyVStack(spacing: 4) {
+            LazyVStack(spacing: 0) {
                 ForEach(list) { c in
                     let on = c.id == current
                     HStack(alignment: .top, spacing: 10) {
@@ -60,6 +60,7 @@ struct PhoneSMSView: View {
                     .background(on ? Color.accentColor : .clear, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .contentShape(Rectangle())
                     .onTapGesture { selected = c.id }
+                    if c.id != list.last?.id { Divider().padding(.leading, 56).padding(.trailing, 10) }
                 }
             }
             .padding(8)
