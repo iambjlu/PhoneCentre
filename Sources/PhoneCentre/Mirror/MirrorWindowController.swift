@@ -13,6 +13,8 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
     private var userResized = false
     /// 還原的視窗大小（扣掉右側欄）；有的話虛擬顯示器就依這個大小建立，不會被影像大小改掉
     private var savedVideoSize: CGSize?
+    /// 主螢幕鏡像還原的畫面高度；第一次收到影像時依手機畫面比例算寬度
+    private var savedMainVideoHeight: CGFloat?
 
     private var chromeWidth: CGFloat { MirrorLayout.railWidth + 1 }
     private var chromeHeight: CGFloat { MirrorLayout.toolbarHeight }
@@ -55,6 +57,10 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
             restoredSize = CGSize(width: c.width - (MirrorLayout.railWidth + 1), height: c.height - MirrorLayout.toolbarHeight)
         }
         savedVideoSize = restoredSize
+        // 主螢幕鏡像：記住上次的高度（寬度依手機畫面比例算），不要每次都回到預設大小
+        if restored, !model.isVirtualDisplay {
+            savedMainVideoHeight = window.contentLayoutRect.size.height - MirrorLayout.toolbarHeight
+        }
         if let topLeft {
             window.setFrameTopLeftPoint(topLeft)
         } else if !restored {
@@ -113,6 +119,9 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
             videoH = model.isVirtualDisplay
                 ? min(size.height / max(1, window.backingScaleFactor), screen.height * 0.9 - chromeHeight)
                 : min(screen.height * 0.85 - chromeHeight, size.height)
+            if !model.isVirtualDisplay, let h = savedMainVideoHeight, h > 200 {
+                videoH = min(h, screen.height * 0.95 - chromeHeight)
+            }
         }
         var videoW = videoH * aspect
         let maxW = screen.width * 0.9 - chromeWidth

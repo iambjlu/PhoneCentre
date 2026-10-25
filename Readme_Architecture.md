@@ -81,7 +81,7 @@ Sources/PhoneCentre/           Swift 原始碼（下面各章節）
 - 遠端 PhoneCentre：新增主機（名稱、主機、port、密碼）、Bonjour（`_phonecentre._tcp`）瀏覽區域網路上的 PhoneCentre、管理已加入的主機（重連、編輯 `RemoteHostEditSheet`、移除）。
 
 ### DeviceOverview.swift
-裝置總覽：最上面是 `PinnedAppsStrip`（「喜好項目」與「已開啟」各自獨立一排，點了依啟動台設定開啟，右鍵可加入／移除喜好項目）、鏡像畫面、桌面模式(Beta)、安裝 APK、設定解鎖密碼、裝置資訊（型號、Android 版本、螢幕、電池、儲存空間、序號；序號預設隱藏（標題旁的 USB／無線位址照常顯示），按眼睛按鈕顯示／隱藏）、拖放區（APK 安裝；照片影片存相機膠卷；其他存「下載項目」＝手機的 `/sdcard/Download`）。
+裝置總覽：標題旁的手機圖示點一下就開鏡像畫面；最上面是 `PinnedAppsStrip`（「喜好項目」與「已開啟」各自獨立一排，點了依啟動台設定開啟，右鍵可加入／移除喜好項目）、鏡像畫面、桌面模式(Beta)、安裝 APK、設定解鎖密碼、裝置資訊（型號、Android 版本、螢幕、電池、儲存空間、序號；序號預設隱藏（標題旁的 USB／無線位址照常顯示），按眼睛按鈕顯示／隱藏）、拖放區（APK 安裝；照片影片存相機膠卷；其他存「下載項目」＝手機的 `/sdcard/Download`）。
 
 ## Sources/PhoneCentre/ADB
 
@@ -181,7 +181,7 @@ Mac 虛擬 keyCode（與鍵盤配置、輸入法無關）→ Android keycode；�
 鏡像視窗內容：畫面在左，右側 `SideColumn`（寬度 `MirrorLayout.railWidth`，毛玻璃，沒有上方工具列）內含 `AppRail`（主鏡像與桌面模式；像 Mac Dock：使用者釘選的 App 一直在（右鍵「保留在 App 列」／「從 App 列移除」，與啟動台、總覽共用同一份釘選清單），執行中沒釘選的接在分隔線後面，執行中的右邊有點，不再顯示最近使用但已關閉的 App；可把圖示往左或往右拖出 App 列超過距離後放開，就在放開位置以獨立視窗開啟，拖曳時由 `DragGhost` 顯示跟著游標的圖示）、解鎖橫幅、App 已關閉提示（「XXX 已關閉」＋打開按鈕）、鎖定提示、置中的提示訊息與截圖白閃、組字文字。另含 `AppIconView`、`VideoSettingsPopover`（預設檔分段選擇＋影格率／解析度選單＋位元率滑桿）、`LockPasswordSheet`（PIN／密碼或圖形）、`MiniLauncher`、`DragGhost`。
 
 ### MirrorWindowController.swift
-鏡像視窗（視窗透明，只在標題列與右側欄兩塊鋪 `NSVisualEffectView` 毛玻璃，手機畫面區域是黑底、不鋪以省渲染資源）。主螢幕鏡像依畫面比例調整與縮放（保留左側欄空間，內容最小高度 `MirrorLayout.minContentHeight`）；虛擬顯示器視窗可自由調整，放開邊框時請 `MirrorModel` 重建顯示器。虛擬顯示器視窗會記住上次的大小（frame autosave），重開時先還原大小、再依該大小建立虛擬顯示器（`presetDisplay`），不再被影像大小覆蓋；可指定開啟位置，否則錯開排列；App 名稱載入後更新標題；關閉時停止工作階段。
+鏡像視窗（主螢幕鏡像與獨立視窗都會記住上次的大小：主螢幕記高度、寬度依手機畫面比例算；視窗透明，只在標題列與右側欄兩塊鋪 `NSVisualEffectView` 毛玻璃，手機畫面區域是黑底、不鋪以省渲染資源）。主螢幕鏡像依畫面比例調整與縮放（保留左側欄空間，內容最小高度 `MirrorLayout.minContentHeight`）；虛擬顯示器視窗可自由調整，放開邊框時請 `MirrorModel` 重建顯示器。虛擬顯示器視窗會記住上次的大小（frame autosave），重開時先還原大小、再依該大小建立虛擬顯示器（`presetDisplay`），不再被影像大小覆蓋；可指定開啟位置，否則錯開排列；App 名稱載入後更新標題；關閉時停止工作階段。
 
 ### DropHandler.swift
 拖進來的檔案：`.apk` 安裝；png/jpeg/jpg/heic/heif/mov/mp4 存到 `/sdcard/DCIM/Camera`；資料夾與其他檔案存到 `/sdcard/Download`。

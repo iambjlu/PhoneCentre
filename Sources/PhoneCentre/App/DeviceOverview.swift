@@ -14,7 +14,11 @@ struct DeviceOverview: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 HStack(spacing: 16) {
-                    Image(systemName: "iphone.gen3").font(.system(size: 56)).foregroundStyle(.secondary)
+                    Button { WindowManager.shared.openMirror(device) } label: {
+                        Image(systemName: "iphone.gen3").font(.system(size: 56)).foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("開啟鏡像畫面")
                     VStack(alignment: .leading, spacing: 4) {
                         Text(device.displayName).font(.title.bold())
                         Text(device.subtitle).foregroundStyle(.secondary)
