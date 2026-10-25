@@ -43,7 +43,7 @@ struct DeviceOverview: View {
                         row("螢幕", device.info.map { "\($0.screenSize) · \($0.density) dpi" } ?? "—")
                         if let d = manufactureText { row("生產日期", d) }
                         if status.sims.count > 1 {
-                            ForEach(status.sims, id: \.slot) { row("SIM \($0.slot)", simText($0)) }
+                            ForEach(status.sims, id: \.slot) { row("電信業者\($0.slot)", simText($0)) }
                         } else {
                             row("電信業者", carrierText)
                         }
@@ -104,7 +104,8 @@ struct DeviceOverview: View {
         if !sim.carrier.isEmpty { parts.append(sim.carrier) }
         if !sim.tech.isEmpty { parts.append(sim.tech) }
         if let d = sim.dbm { parts.append("\(d)dBm") }
-        return parts.isEmpty ? (sim.inService ? "—" : "沒有服務") : parts.joined(separator: " ")
+        let text = parts.isEmpty ? (sim.inService ? "—" : "沒有服務") : parts.joined(separator: " ")
+        return sim.emergencyOnly && !sim.inService ? text + "(僅限緊急通話)" : text
     }
 
     private var carrierText: String {

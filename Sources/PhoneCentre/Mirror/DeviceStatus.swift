@@ -8,6 +8,7 @@ struct SimInfo: Equatable {
     var dbm: Int?
     var bars = 0
     var inService = false
+    var emergencyOnly = false   // 只能撥緊急電話（沒有正常服務）
 }
 
 struct DeviceStatus: Equatable {
@@ -50,7 +51,7 @@ struct DeviceStatus: Equatable {
     static let script = """
     echo '@@bat'; dumpsys battery | grep -E '^  (level|status|AC powered|USB powered|Wireless powered):'
     echo '@@net'; dumpsys connectivity | grep -E 'Active default network|NetworkAgentInfo\\{network\\{' | cut -c1-150
-    echo '@@tel'; dumpsys telephony.registry | grep -E '^  Phone Id=|^    (mServiceState|mSignalStrength|mDataConnectionState|mCellInfo)=' | cut -c1-900
+    echo '@@tel'; dumpsys telephony.registry | grep -E '^  Phone Id=|^    (mServiceState|mSignalStrength|mDataConnectionState|mCellInfo)=' | cut -c1-2000
     echo '@@sim'; getprop gsm.sim.state
     echo '@@wifi'; dumpsys wifi | grep -m1 -oE 'RSSI: -?[0-9]+'
     echo '@@wifiinfo'; dumpsys wifi | grep -m1 'mWifiInfo SSID' | cut -c1-200
@@ -158,6 +159,7 @@ struct DeviceStatus: Equatable {
         var p = SimInfo()
         if let svc = lines.first(where: { $0.contains("mServiceState=") }) {
             p.inService = svc.contains("mVoiceRegState=0") || svc.contains("mDataRegState=0")
+            p.emergencyOnly = svc.contains("mIsEmergencyOnly=true")
             // 「getRilDataRadioTechnology=14(LTE)」→ LTE；NR 顯示 5G
             for key in ["getRilDataRadioTechnology=", "getRilVoiceRadioTechnology="] {
                 guard let r = svc.range(of: key), let o = svc[r.upperBound...].firstIndex(of: "(") else { continue }

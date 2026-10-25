@@ -81,7 +81,7 @@ Sources/PhoneCentre/           Swift 原始碼（下面各章節；PhoneData 為
 - 遠端 PhoneCentre：新增主機（名稱、主機、port、密碼）、Bonjour（`_phonecentre._tcp`）瀏覽區域網路上的 PhoneCentre、管理已加入的主機（重連、編輯 `RemoteHostEditSheet`、移除）。
 
 ### DeviceOverview.swift
-裝置總覽：標題旁的手機圖示點一下就開鏡像畫面；最上面是 `PinnedAppsStrip`（「喜好項目」與「已開啟」各自獨立一排，點了依啟動台設定開啟，右鍵可加入／移除喜好項目）、鏡像畫面、桌面模式(Beta)、安裝 APK、設定解鎖密碼、裝置資訊（內容比標題再往右縮排一點；型號、Android 版本、螢幕、電池、儲存空間、序號；序號預設隱藏（標題旁的 USB／無線位址照常顯示），按眼睛按鈕顯示／隱藏）、拖放區（APK 安裝；照片影片存相機膠卷；其他存「下載項目」＝手機的 `/sdcard/Download`）。
+裝置總覽：標題旁的手機圖示點一下就開鏡像畫面；最上面是 `PinnedAppsStrip`（「喜好項目」與「已開啟」各自獨立一排，點了依啟動台設定開啟，右鍵可加入／移除喜好項目）、鏡像畫面、桌面模式(Beta)、安裝 APK、設定解鎖密碼、裝置資訊（資料來自 `DeviceStatus.fetch` 一次取得：型號、Android 版本、螢幕、生產日期（三星的 `ril.rfcal_date` RF 校正日，約等於出廠日；沒有就不顯示）、電信業者（業者名稱、網路技術、訊號 dBm；雙卡時每張有插卡的 SIM 各一列，列名「電信業者1／電信業者2」，只能撥緊急電話——`mIsEmergencyOnly=true` 且沒有正常服務——的卡後面加半形括號「(僅限緊急通話)」）、Wi-Fi（名稱與 IP）、電池（依電池狀態碼區分：插電但沒在充電會寫「已插電，未充電」，不再一律寫充電中）、電池容量（目前最大／設計 mAh 與百分比）、循環次數、儲存空間、序號；序號預設隱藏（標題旁的 USB／無線位址照常顯示），按眼睛按鈕顯示／隱藏）、拖放區（APK 安裝；照片影片存相機膠卷；其他存「下載項目」＝手機的 `/sdcard/Download`）。
 
 ## Sources/PhoneCentre/ADB
 
