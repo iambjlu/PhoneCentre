@@ -174,8 +174,8 @@ struct LaunchpadView: View {
                 }
             }
             Text(app.label).font(.caption).lineLimit(1).truncationMode(.tail)
-            Circle().fill(catalog.running.contains(app.package) ? Color.primary.opacity(0.6) : .clear)
-                .frame(width: 4, height: 4)
+            Capsule().fill(catalog.running.contains(app.package) ? Color.primary.opacity(0.6) : .clear)
+                .frame(width: 12, height: 3)
         }
         .frame(width: 96)
         .contentShape(Rectangle())

@@ -145,7 +145,7 @@ struct AppRail: View {
 
     /// 液態玻璃面板的高度跟著圖示數量：放得下就剛好包住，放不下才捲動
     var body: some View {
-        if pinned.isEmpty && openOnly.isEmpty {
+        if current == nil && pinned.isEmpty && openOnly.isEmpty {
             EmptyView()
         } else {
             ViewThatFits(in: .vertical) {
@@ -155,12 +155,17 @@ struct AppRail: View {
         }
     }
 
-    /// 像 Mac Dock：使用者釘選的 App 一直在，執行中但沒釘選的接在分隔線後面
-    private var pinned: [String] { settings.pinned(for: catalog.device) }
-    private var openOnly: [String] { catalog.running.filter { !pinned.contains($0) } }
+    /// 第一個是目前在手機畫面最上層的 App；接著像 Mac Dock：使用者釘選的 App 一直在，執行中但沒釘選的接在分隔線後面
+    private var current: String? { catalog.foreground }
+    private var pinned: [String] { settings.pinned(for: catalog.device).filter { $0 != current } }
+    private var openOnly: [String] { catalog.running.filter { !settings.pinned(for: catalog.device).contains($0) && $0 != current } }
 
     private var iconList: some View {
         VStack(spacing: 10) {
+            if let current {
+                railIcon(current, running: true)
+                if !pinned.isEmpty || !openOnly.isEmpty { Divider().padding(.horizontal, 12).opacity(0.4) }
+            }
             ForEach(pinned, id: \.self) { pkg in
                 railIcon(pkg, running: catalog.running.contains(pkg))
             }
@@ -179,7 +184,7 @@ struct AppRail: View {
         return ZStack {
             AppIconView(catalog: catalog, package: pkg, size: 38)
                 .opacity(dragging ? 0.4 : 1)
-            Circle().fill(running ? Color.white.opacity(0.8) : .clear).frame(width: 4, height: 4)
+            Capsule().fill(running ? Color.white.opacity(0.8) : .clear).frame(width: 3, height: 12)
                 .frame(maxWidth: .infinity, alignment: .trailing).padding(.trailing, 3)
         }
         .frame(maxWidth: .infinity)

@@ -190,7 +190,7 @@ struct PinnedAppsStrip: View {
                                 AppIconView(catalog: catalog, package: pkg, size: 52)
                                     .shadow(color: .black.opacity(0.15), radius: 3, y: 1)
                                 Text(catalog.label(for: pkg)).font(.caption).lineLimit(1).frame(width: 72)
-                                Circle().fill(catalog.running.contains(pkg) ? Color.primary.opacity(0.6) : .clear).frame(width: 4, height: 4)
+                                Capsule().fill(catalog.running.contains(pkg) ? Color.primary.opacity(0.6) : .clear).frame(width: 12, height: 3)
                             }
                             .contentShape(Rectangle())
                             .onTapGesture { WindowManager.shared.launch(device, package: pkg) }

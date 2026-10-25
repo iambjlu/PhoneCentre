@@ -16,6 +16,7 @@ final class AppCatalog: ObservableObject {
     @Published private(set) var apps: [AppEntry] = []
     @Published private(set) var icons: [String: NSImage] = [:]
     @Published private(set) var running: [String] = []     // 已開啟（有程序在跑）的 App，依最近使用排序
+    @Published private(set) var foreground: String?         // 目前在手機畫面最上層的 App（桌面、系統介面不算）
     @Published private(set) var recent: [String] = []      // 最近用過但已不在執行
     @Published private(set) var loading = false
     @Published private(set) var error: String?
@@ -118,8 +119,17 @@ final class AppCatalog: ObservableObject {
             let out = (try? await device.client.shell("pm list packages")) ?? ""
             installed = Set(out.split(separator: "\n").map { $0.replacingOccurrences(of: "package:", with: "").trimmingCharacters(in: .whitespaces) })
         }
-        guard let out = try? await device.client.shell("dumpsys activity recents; echo '@@PS@@'; ps -A -o NAME") else { return }
-        let halves = out.components(separatedBy: "@@PS@@")
+        guard let out = try? await device.client.shell(
+            "dumpsys activity recents; echo '@@PS@@'; ps -A -o NAME; echo '@@FG@@'; dumpsys activity activities | grep -m1 -E 'topResumedActivity=|mResumedActivity:'") else { return }
+        let fgParts = out.components(separatedBy: "@@FG@@")
+        let halves = fgParts[0].components(separatedBy: "@@PS@@")
+        // 「…ActivityRecord{3f2a0 u0 com.instagram.android/.MainActivity t12…}」→ com.instagram.android
+        var fg: String?
+        if fgParts.count > 1, let r = fgParts[1].range(of: #"u\d+ [A-Za-z0-9_.]+/"#, options: .regularExpression) {
+            fg = fgParts[1][r].split(separator: " ").last.map { String($0.dropLast()) }
+        }
+        if let f = fg, f == homePackage || f == "com.android.systemui" { fg = nil }
+        if fg != foreground { foreground = fg }
         let procs = Set((halves.count > 1 ? halves[1] : "").split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) })
         var order: [String] = []
         for pkg in Self.parseRecents(halves[0], installed: installed)
