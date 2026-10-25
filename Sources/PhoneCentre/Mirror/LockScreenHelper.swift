@@ -29,7 +29,54 @@ enum LockScreenHelper {
         return (try? await ctx.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason)) ?? false
     }
 
-    /// 喚醒 → 上滑 → 輸入密碼 → Enter
+    static let patternPrefix = "pattern:"
+
+    static func isPattern(_ pw: String) -> Bool { pw.hasPrefix(patternPrefix) }
+
+    static func patternSequence(_ pw: String) -> [Int] { pw.dropFirst(patternPrefix.count).compactMap { $0.wholeNumberValue } }
+
+    /// 螢幕大小（像素），用來算上滑與圖形密碼的座標
+    private static func screenSize(_ device: Device) -> CGSize {
+        let p = (device.info?.screenSize ?? "").split(separator: "x").compactMap { Double($0) }
+        return p.count == 2 ? CGSize(width: min(p[0], p[1]), height: max(p[0], p[1])) : CGSize(width: 1080, height: 2280)
+    }
+
+    /// 用 uiautomator 找圖形密碼的範圍；找不到就用螢幕下半部推測
+    private static func patternBounds(_ c: AdbClient, screen: CGSize) async -> CGRect {
+        let xml = (try? await c.shell("uiautomator dump /sdcard/pc_ui.xml >/dev/null 2>&1; cat /sdcard/pc_ui.xml; rm -f /sdcard/pc_ui.xml", timeout: 15)) ?? ""
+        for node in xml.components(separatedBy: "<node ") where node.contains("LockPatternView") || node.lowercased().contains("lockpatternview") {
+            if let r = node.range(of: "bounds=\"[") {
+                let nums = node[r.upperBound...].prefix { $0 != "\"" }
+                    .split(whereSeparator: { !"0123456789".contains($0) }).compactMap { Double($0) }
+                if nums.count == 4, nums[2] > nums[0], nums[3] > nums[1] {
+                    return CGRect(x: nums[0], y: nums[1], width: nums[2] - nums[0], height: nums[3] - nums[1])
+                }
+            }
+        }
+        let w = screen.width * 0.8
+        return CGRect(x: (screen.width - w) / 2, y: screen.height * 0.85 - w, width: w, height: w)
+    }
+
+    private static func drawPattern(_ seq: [Int], on c: AdbClient, in b: CGRect) async {
+        func pt(_ n: Int) -> CGPoint {
+            CGPoint(x: b.minX + b.width * (CGFloat((n - 1) % 3) + 0.5) / 3, y: b.minY + b.height * (CGFloat((n - 1) / 3) + 0.5) / 3)
+        }
+        guard let first = seq.first else { return }
+        var cmds = ["input motionevent DOWN \(Int(pt(first).x)) \(Int(pt(first).y))"]
+        for (a, b2) in zip(seq, seq.dropFirst()) {
+            let p0 = pt(a), p1 = pt(b2)
+            for i in 1...6 {
+                let t = CGFloat(i) / 6
+                cmds.append("input motionevent MOVE \(Int(p0.x + (p1.x - p0.x) * t)) \(Int(p0.y + (p1.y - p0.y) * t))")
+            }
+        }
+        let last = pt(seq.last!)
+        cmds.append("input motionevent UP \(Int(last.x)) \(Int(last.y))")
+        _ = try? await c.shell(cmds.joined(separator: "; "), timeout: 15)
+    }
+
+    /// 喚醒 → 上滑 → 輸入密碼（或畫圖形）→ Enter。
+    /// 獨立視窗（虛擬顯示器）的鏡像連線不能操作主螢幕，所以傳 session = nil 改走 adb input。
     @MainActor
     static func unlock(_ device: Device, session: ScrcpySession?) async -> Bool {
         guard await authenticate(reason: "填入「\(device.displayName)」的解鎖密碼"),
@@ -37,6 +84,7 @@ enum LockScreenHelper {
         let c = device.client
         _ = try? await c.shell("input keyevent 224")
         try? await Task.sleep(nanoseconds: 400_000_000)
+        let screen = screenSize(device)
         let size = session?.frameSize ?? .zero
         if let s = session, size.width > 0 {
             // 透過鏡像連線上滑
@@ -54,10 +102,14 @@ enum LockScreenHelper {
             s.send(.touch(action: .up, pointer: ControlMessage.pointerFinger, x: x, y: Int32(size.height * 0.35),
                           width: w, height: h, pressure: 0, actionButton: 0, buttons: 0))
         } else {
-            _ = try? await c.shell("wm dismiss-keyguard; input swipe 540 1800 540 600 150")
+            let x = Int(screen.width / 2)
+            _ = try? await c.shell("wm dismiss-keyguard; input swipe \(x) \(Int(screen.height * 0.85)) \(x) \(Int(screen.height * 0.3)) 150")
         }
         try? await Task.sleep(nanoseconds: 700_000_000)
-        if let s = session, pw.allSatisfy({ $0.isASCII }) {
+        if isPattern(pw) {
+            let bounds = await patternBounds(c, screen: screen)
+            await drawPattern(patternSequence(pw), on: c, in: bounds)
+        } else if let s = session, pw.allSatisfy({ $0.isASCII }) {
             s.send(.text(pw))
             s.send(.keycode(action: .down, keycode: KeyMap.enter, repeat: 0, meta: 0))
             s.send(.keycode(action: .up, keycode: KeyMap.enter, repeat: 0, meta: 0))

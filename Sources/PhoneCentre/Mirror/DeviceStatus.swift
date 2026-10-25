@@ -10,11 +10,14 @@ struct DeviceStatus: Equatable {
     var hasSim = false
     var signalBars = 0             // 0...4
     var inService = false
+    var wifiLevel = 0              // 0...4
+    var autoRotate = true
+    var userRotation = 0           // 0...3，對應 0°／90°／180°／270°
 
     var summary: String {
         var parts: [String] = []
         if batteryLevel >= 0 { parts.append("電池 \(batteryLevel)%" + (charging ? "（充電中）" : "")) }
-        if wifi { parts.append("Wi-Fi") } else if let t = cellularTech { parts.append("行動網路 \(t)") } else { parts.append("沒有網路") }
+        if wifi { parts.append("Wi-Fi \(wifiLevel)/4") } else if let t = cellularTech { parts.append("行動網路 \(t)") } else { parts.append("沒有網路") }
         if hasSim { parts.append(inService ? "訊號 \(signalBars)/4" : "沒有服務") }
         return parts.joined(separator: " · ")
     }
@@ -24,6 +27,8 @@ struct DeviceStatus: Equatable {
     echo '@@net'; dumpsys connectivity | grep -E 'Active default network|NetworkAgentInfo\\{network\\{' | cut -c1-150
     echo '@@tel'; dumpsys telephony.registry | grep -E '^  Phone Id=|^    (mServiceState|mSignalStrength|mDataConnectionState)=' | cut -c1-420
     echo '@@sim'; getprop gsm.sim.state
+    echo '@@wifi'; dumpsys wifi | grep -m1 -oE 'RSSI: -?[0-9]+'
+    echo '@@rot'; settings get system accelerometer_rotation; settings get system user_rotation
     """
 
     static func fetch(_ c: AdbClient) async -> DeviceStatus? {
@@ -61,6 +66,14 @@ struct DeviceStatus: Equatable {
             }
         }
 
+        if s.wifi, let r = (sections["wifi"] ?? []).first, let rssi = Int(r.replacingOccurrences(of: "RSSI:", with: "").trimmingCharacters(in: .whitespaces)) {
+            // 同 Android 的 calculateSignalLevel：-100…-55 dBm 對應 0…4 格
+            s.wifiLevel = max(0, min(4, (rssi + 100) * 4 / 45))
+        } else if s.wifi { s.wifiLevel = 4 }
+        let rot = sections["rot"] ?? []
+        if rot.count >= 1 { s.autoRotate = rot[0].trimmingCharacters(in: .whitespaces) != "0" }
+        if rot.count >= 2 { s.userRotation = Int(rot[1].trimmingCharacters(in: .whitespaces)) ?? 0 }
+
         // SIM 與訊號：有資料連線的那張算主要 SIM，否則取第一張
         let simStates = (sections["sim"]?.first ?? "").split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
         s.hasSim = simStates.contains { $0 != "ABSENT" && !$0.isEmpty && $0 != "UNKNOWN" }
@@ -75,12 +88,15 @@ struct DeviceStatus: Equatable {
                 s.inService = svc.contains("mVoiceRegState=0") || svc.contains("mDataRegState=0")
                 if s.cellularTech == nil, s.wifi == false { /* 沒有網路 */ }
             }
-            if let sig = primary.first(where: { $0.contains("mSignalStrength=") }),
-               let r = sig.range(of: "level=") {
-                s.signalBars = min(4, Int(sig[r.upperBound...].prefix { $0.isNumber }) ?? 0)
+            if let sig = primary.first(where: { $0.contains("mSignalStrength=") }) {
+                // 三星的狀態列用 SignalBarInfo 的格數（例如 lteLevel=4），沒有才用標準的 level=
+                if let r = sig.range(of: "SignalBarInfo{"), let l = sig[r.upperBound...].range(of: "Level=") {
+                    s.signalBars = min(4, Int(sig[l.upperBound...].prefix { $0.isNumber }) ?? 0)
+                } else if let r = sig.range(of: "level=") {
+                    s.signalBars = min(4, Int(sig[r.upperBound...].prefix { $0.isNumber }) ?? 0)
+                }
             }
         }
-        if !s.inService { s.signalBars = 0 }
         return s
     }
 

@@ -89,8 +89,10 @@ extension Int64 {
 /// 拖出到 Finder：系統要資料時才從手機下載
 func remoteFileItemProvider(_ f: RemoteFile, device: Device) -> NSItemProvider {
     let provider = NSItemProvider()
-    provider.suggestedName = f.name
     let type = f.isDir ? UTType.folder : f.utType
+    // 有副檔名的檔案不要設 suggestedName：系統會再依型別補一次副檔名（變成 .jpg.jpeg），
+    // 不設的話就直接用下面交出去的檔案名稱
+    if f.isDir || (f.name as NSString).pathExtension.isEmpty { provider.suggestedName = f.name }
     provider.registerFileRepresentation(forTypeIdentifier: type.identifier, fileOptions: [], visibility: .all) { done in
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("PhoneCentre-drag-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)

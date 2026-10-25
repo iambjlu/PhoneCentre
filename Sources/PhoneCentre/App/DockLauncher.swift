@@ -77,7 +77,9 @@ enum DockLauncher {
             return
         }
 
-        let safeTitle = title.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
+        let bad = CharacterSet(charactersIn: "/:\\\"*?<>|").union(.controlCharacters)
+        let cleaned = String(String.UnicodeScalarView(title.unicodeScalars.map { bad.contains($0) ? "-" : $0 }))
+        let safeTitle = String(cleaned.prefix(40))
         let app = dir.appendingPathComponent("\(safeTitle) (\(hash)).app")
         Task {
             do {
@@ -87,6 +89,14 @@ enum DockLauncher {
                 WindowManager.shared.show(device, package: package, desktop: desktop)
                 return
             }
+            await open(app, bundleID: bundleID, title: title, device: device, package: package, desktop: desktop, icon: icon, hash: hash, at: point, retry: true)
+        }
+    }
+
+    /// 啟動副本；失敗時（例如副本損壞、簽章或隔離屬性問題）重建一次再試，真的不行才改在主程式開
+    private static func open(_ app: URL, bundleID: String, title: String, device: Device, package: String?, desktop: Bool,
+                             icon: NSImage?, hash: String, at point: NSPoint?, retry: Bool) async {
+        do {
             var args = ["--child", "--serial", device.serial,
                         "--host", device.endpoint.host, "--port", String(device.endpoint.port)]
             if let r = device.endpoint.remoteID { args += ["--remote", r.uuidString] }
@@ -104,13 +114,18 @@ enum DockLauncher {
             cfg.arguments = args
             cfg.createsNewApplicationInstance = false
             cfg.activates = true
-            NSWorkspace.shared.openApplication(at: app, configuration: cfg) { _, err in
-                if let err {
-                    Task { @MainActor in
-                        DeviceManager.shared.log("啟動獨立視窗失敗：\(err.localizedDescription)")
-                        WindowManager.shared.show(device, package: package, desktop: desktop)
-                    }
-                }
+            _ = try await NSWorkspace.shared.openApplication(at: app, configuration: cfg)
+        } catch {
+            if retry {
+                DeviceManager.shared.log("獨立視窗啟動失敗（\(error.localizedDescription)），重建後重試")
+                try? FileManager.default.removeItem(at: app)
+                do { try await prepare(app, bundleID: bundleID, title: title) } catch {}
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                await open(app, bundleID: bundleID, title: title, device: device, package: package, desktop: desktop,
+                           icon: icon, hash: hash, at: point, retry: false)
+            } else {
+                DeviceManager.shared.log("啟動獨立視窗失敗：\(error.localizedDescription)，改在主程式開啟")
+                WindowManager.shared.show(device, package: package, desktop: desktop)
             }
         }
     }
@@ -138,8 +153,11 @@ enum DockLauncher {
         dict["CFBundleName"] = String(title.prefix(15))
         dict["CFBundleDisplayName"] = title
         dict.write(to: plist, atomically: true)
+        // 從別台電腦／AirDrop 來的主程式帶有隔離屬性，複製後會被 Gatekeeper 擋下（「無法打開」）
+        _ = try await Shell.run("/usr/bin/xattr", ["-cr", app.path])
         _ = try await Shell.run("/usr/bin/touch", [cloneExe.path])
-        _ = try await Shell.run("/usr/bin/codesign", ["--force", "--deep", "-s", "-", app.path])
+        let sign = try await Shell.run("/usr/bin/codesign", ["--force", "--deep", "-s", "-", app.path])
+        if sign.status != 0 { throw AdbError.failed("簽章失敗：\(sign.stderr)") }
     }
 
     /// 清除所有副本

@@ -1,5 +1,8 @@
+import AppKit
 import AVFoundation
+import CoreImage
 import CoreMedia
+import VideoToolbox
 
 /// 把 scrcpy 送來的 H.264（Annex B）封包轉成 CMSampleBuffer，交給 AVSampleBufferDisplayLayer 硬體解碼顯示
 final class VideoDecoder {
@@ -9,6 +12,44 @@ final class VideoDecoder {
     var onSizeChange: ((CGSize) -> Void)?
     var enqueue: ((CMSampleBuffer, _ formatChanged: Bool) -> Void)?
     private var formatChanged = false
+    private var captureHandler: ((Data?) -> Void)?
+    private let captureLock = NSLock()
+
+    /// 下一個關鍵幀解碼成 PNG 交給 handler；3 秒內沒有關鍵幀就回傳 nil
+    func captureNextKeyFrame(_ handler: @escaping (Data?) -> Void) {
+        captureLock.lock(); captureHandler = handler; captureLock.unlock()
+        DispatchQueue.global().asyncAfter(deadline: .now() + 3) { [weak self] in
+            guard let self else { return }
+            self.captureLock.lock()
+            let h = self.captureHandler
+            self.captureHandler = nil
+            self.captureLock.unlock()
+            h?(nil)
+        }
+    }
+
+    private func finishCapture(sample: CMSampleBuffer, format: CMVideoFormatDescription) {
+        captureLock.lock()
+        let h = captureHandler
+        captureHandler = nil
+        captureLock.unlock()
+        guard let h else { return }
+        var session: VTDecompressionSession?
+        guard VTDecompressionSessionCreate(allocator: nil, formatDescription: format, decoderSpecification: nil,
+                                           imageBufferAttributes: nil, outputCallback: nil,
+                                           decompressionSessionOut: &session) == noErr, let session else { h(nil); return }
+        var png: Data?
+        let status = VTDecompressionSessionDecodeFrame(session, sampleBuffer: sample, flags: [], infoFlagsOut: nil) { st, _, image, _, _ in
+            guard st == noErr, let image else { return }
+            let ci = CIImage(cvPixelBuffer: image)
+            if let cg = CIContext().createCGImage(ci, from: ci.extent) {
+                png = NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:])
+            }
+        }
+        if status == noErr { VTDecompressionSessionWaitForAsynchronousFrames(session) }
+        VTDecompressionSessionInvalidate(session)
+        h(png)
+    }
 
     /// 依 00 00 01 / 00 00 00 01 起始碼切出 NAL units
     static func nalUnits(_ data: Data) -> [Data] {
@@ -109,6 +150,7 @@ final class VideoDecoder {
             a[kCMSampleAttachmentKey_DisplayImmediately] = true
             if !keyFrame { a[kCMSampleAttachmentKey_NotSync] = true }
         }
+        if keyFrame { finishCapture(sample: sample, format: format) }
         let changed = formatChanged
         formatChanged = false
         enqueue?(sample, changed)

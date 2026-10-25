@@ -161,7 +161,7 @@ Mac 虛擬 keyCode（與鍵盤配置、輸入法無關）→ Android keycode；�
 - 操作：按鍵、黑屏切換、Mac 端靜音、啟動 App、截圖存到桌面、套用畫質（重啟）、拖放處理、Touch ID 解鎖。
 
 ### DeviceStatus.swift
-手機狀態：一次 shell 取得 `dumpsys battery`（電量、是否接電）、`dumpsys connectivity`（預設網路是 Wi-Fi 還是 MOBILE[LTE] → 4G/5G）、`dumpsys telephony.registry`（有資料連線的那張 SIM，否則第一張；訊號 level 0–4、是否有服務）、`gsm.sim.state`。`MirrorModel` 每 5 秒更新。
+手機狀態：一次 shell 取得 `dumpsys battery`（電量、是否接電）、`dumpsys connectivity`（預設網路是 Wi-Fi 還是 MOBILE[LTE] → 4G/5G）、`dumpsys telephony.registry`（有資料連線的那張 SIM，否則第一張；訊號 level 0–4、是否有服務）、`gsm.sim.state`。`MirrorModel` 每 5 秒更新；另含 Wi-Fi RSSI（格數）、自動旋轉與目前鎖定方向。
 
 ### NavBar.swift
 左側欄 `SideColumn`：上方 `StatusIndicator`（外環＝電池，缺口在下的 270° 圓環；充電為綠色，≤20% 為紅色；環上方是閃電＋百分比；中間 Wi-Fi 或 4G/5G；訊號格是沿外環圓弧排在缺口裡的 4 個點），中間 App 列（獨立視窗沒有），下方導覽列。導覽列由上到下：畫質設定、輸入方式（選單）、桌面模式的啟動台、虛擬定位（尚未提供）、聲音（選單：音量＋／−、Mac 端靜音）、截圖、旋轉（選單）、黑屏與電源（只有主螢幕）、多工、主畫面、返回。按鍵一律是 SF Symbols；多工「|||」、主畫面（圓角方形）、返回「<」是仿 One UI 的自繪圖示（`SamsungNavIcon`）。

@@ -8,18 +8,19 @@ struct MirrorViewRepresentable: NSViewRepresentable {
 }
 
 enum MirrorLayout {
-    /// 左側欄（狀態指示、App 列、導覽列）寬度；視窗上方沒有工具列
+    /// 右側欄（狀態指示、App 列、導覽列）寬度；視窗上方沒有工具列
     static let railWidth: CGFloat = 64
     static let toolbarHeight: CGFloat = 0
     static let minContentHeight: CGFloat = 560
 }
 
-/// 鏡像視窗內容：左側欄（狀態指示 + App 列 + 導覽列）＋ 手機畫面
+/// 鏡像視窗內容：手機畫面 ＋ 右側欄（狀態指示 + App 列 + 導覽列）
 struct MirrorContentView: View {
     @ObservedObject var model: MirrorModel
     @ObservedObject var catalog: AppCatalog
     @State private var showVideoSettings = false
     @State private var showPasswordSheet = false
+    @State private var showLocation = false
 
     init(model: MirrorModel) {
         self.model = model
@@ -28,84 +29,100 @@ struct MirrorContentView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            SideColumn(model: model, catalog: catalog, showVideoSettings: $showVideoSettings)
-                .frame(width: MirrorLayout.railWidth)
-            Divider()
             ZStack {
+                Color.black
                 MirrorViewRepresentable(view: model.view)
                 overlays
+                // 截圖：先全白再淡出
+                Color.white.opacity(model.flashOpacity).allowsHitTesting(false)
             }
+            Divider()
+            SideColumn(model: model, catalog: catalog, showVideoSettings: $showVideoSettings, showLocation: $showLocation)
+                .frame(width: MirrorLayout.railWidth)
         }
-        .background(Color.black)
         .sheet(isPresented: $showPasswordSheet) {
             LockPasswordSheet(device: model.device)
         }
+        .sheet(isPresented: $showLocation) {
+            LocationSimulatorSheet(device: model.device)
+        }
     }
 
-    // MARK: 疊加訊息
+    // MARK: 疊加訊息（一律毛玻璃底）
 
     @ViewBuilder
     private var overlays: some View {
         VStack {
-            if model.showUnlockBanner {
+            if model.showUnlockBanner && !model.isVirtualDisplay {
                 HStack(spacing: 10) {
                     Image(systemName: "lock.fill")
                     Text("手機已鎖定")
-                    if LockScreenHelper.hasPassword(model.device) {
-                        Button { model.unlock() } label: { Label("用 Touch ID 填入密碼", systemImage: "touchid") }
-                            .buttonStyle(.borderedProminent)
-                    } else {
-                        Button("儲存解鎖密碼…") { showPasswordSheet = true }
-                    }
+                    unlockButton
                     Button { model.dismissUnlock() } label: { Image(systemName: "xmark") }
                         .buttonStyle(.plain)
                 }
                 .padding(10)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+                .glassCard(cornerRadius: 12)
                 .padding(.top, 10)
             }
             Spacer()
             if !model.markedText.isEmpty {
                 Text(model.markedText)
                     .font(.title3)
-                    .padding(.horizontal, 12).padding(.vertical, 6)
-                    .background(.regularMaterial, in: Capsule())
+                    .padding(.horizontal, 14).padding(.vertical, 7)
+                    .glassCard(cornerRadius: 16)
                     .padding(.bottom, 100)
-            }
-            if let t = model.toast {
-                Text(t)
-                    .font(.callout)
-                    .padding(.horizontal, 12).padding(.vertical, 8)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
-                    .padding(.bottom, 16)
             }
         }
         .allowsHitTesting(model.showUnlockBanner)
-        if model.desktopMode, model.statusText == nil, model.desktopEmpty {
-            VStack(spacing: 8) {
-                Image(systemName: "macwindow.on.rectangle").font(.largeTitle)
-                Text("從左側 App 列或導覽列的 \(Image(systemName: "square.grid.2x2")) 開啟 App")
+        // 手機鎖定時，虛擬顯示器上的 App 會黑屏：明確提示
+        if model.locked && model.isVirtualDisplay && model.statusText == nil {
+            VStack(spacing: 12) {
+                Image(systemName: "lock.fill").font(.largeTitle)
+                Text("手機已鎖定，解鎖後才會顯示 App 畫面").font(.headline).multilineTextAlignment(.center)
+                unlockButton
             }
-            .foregroundStyle(.secondary)
-            .allowsHitTesting(false)
+            .padding(24)
+            .glassCard(cornerRadius: 18)
         }
         if model.appClosed, model.statusText == nil, let pkg = model.appPackage {
             VStack(spacing: 12) {
-                AppIconView(catalog: catalog, package: pkg, size: 56).opacity(0.8)
+                AppIconView(catalog: catalog, package: pkg, size: 56).opacity(0.9)
                 Text("\(model.appLabel ?? catalog.label(for: pkg)) 已關閉")
-                    .font(.headline).foregroundStyle(.white)
+                    .font(.headline)
                 Button("打開") { model.reopenApp() }
                     .buttonStyle(.borderedProminent).controlSize(.large)
             }
             .padding(24)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+            .glassCard(cornerRadius: 18)
         }
         if let s = model.statusText {
             VStack(spacing: 12) {
                 ProgressView().controlSize(.small)
-                Text(s).font(.callout).multilineTextAlignment(.center).foregroundStyle(.white)
+                Text(s).font(.callout).multilineTextAlignment(.center)
             }
-            .padding()
+            .padding(20)
+            .glassCard(cornerRadius: 16)
+        }
+        // 提示訊息顯示在畫面正中間
+        if let t = model.toast {
+            Text(t)
+                .font(.callout)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 16).padding(.vertical, 10)
+                .glassCard(cornerRadius: 14)
+                .padding(24)
+                .allowsHitTesting(false)
+                .transition(.opacity)
+        }
+    }
+
+    @ViewBuilder private var unlockButton: some View {
+        if LockScreenHelper.hasPassword(model.device) {
+            Button { model.unlock() } label: { Label("用 Touch ID 解鎖", systemImage: "touchid") }
+                .buttonStyle(.borderedProminent)
+        } else {
+            Button("儲存解鎖密碼…") { showPasswordSheet = true }
         }
     }
 }
@@ -125,7 +142,7 @@ struct AppRail: View {
                     railIcon(pkg, running: true)
                 }
                 if !catalog.running.isEmpty && !catalog.recent.isEmpty {
-                    Divider().padding(.horizontal, 12)
+                    Divider().padding(.horizontal, 12).opacity(0.4)
                 }
                 ForEach(catalog.recent, id: \.self) { pkg in
                     railIcon(pkg, running: false)
@@ -140,8 +157,8 @@ struct AppRail: View {
         return ZStack {
             AppIconView(catalog: catalog, package: pkg, size: 38)
                 .opacity(dragging ? 0.4 : 1)
-            Circle().fill(running ? Color.primary.opacity(0.7) : .clear).frame(width: 4, height: 4)
-                .frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 3)
+            Circle().fill(running ? Color.white.opacity(0.8) : .clear).frame(width: 4, height: 4)
+                .frame(maxWidth: .infinity, alignment: .trailing).padding(.trailing, 3)
         }
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
@@ -258,18 +275,42 @@ struct VideoSettingsPopover: View {
     }
 }
 
-/// 設定手機解鎖密碼（存在 Mac 鑰匙圈）
+/// 設定手機解鎖密碼（PIN／密碼或圖形，存在 Mac 鑰匙圈）
 struct LockPasswordSheet: View {
     let device: Device
     @Environment(\.dismiss) private var dismiss
     @State private var pw = ""
+    @State private var usePattern = false
+    @State private var pattern: [Int] = []
+
+    private var canSave: Bool { usePattern ? pattern.count >= 4 : !pw.isEmpty }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("「\(device.displayName)」的解鎖密碼").font(.headline)
             Text("密碼會存在這台 Mac 的鑰匙圈。偵測到手機在鎖定畫面時，可用 Touch ID 驗證後自動填入。")
                 .font(.callout).foregroundStyle(.secondary)
-            SecureField("PIN 或密碼", text: $pw)
+            Picker("", selection: $usePattern) {
+                Text("PIN／密碼").tag(false)
+                Text("圖形").tag(true)
+            }
+            .pickerStyle(.segmented).labelsHidden()
+            if usePattern {
+                HStack {
+                    Spacer()
+                    VStack(spacing: 8) {
+                        PatternPad(sequence: $pattern)
+                        HStack {
+                            Text(pattern.isEmpty ? "在上面畫出圖形（至少 4 個點）" : pattern.map(String.init).joined(separator: " → "))
+                                .font(.caption).foregroundStyle(.secondary)
+                            Button("清除") { pattern = [] }.controlSize(.small)
+                        }
+                    }
+                    Spacer()
+                }
+            } else {
+                SecureField("PIN 或密碼", text: $pw)
+            }
             HStack {
                 if LockScreenHelper.hasPassword(device) {
                     Button("刪除已儲存的密碼", role: .destructive) {
@@ -279,10 +320,11 @@ struct LockPasswordSheet: View {
                 Spacer()
                 Button("取消") { dismiss() }
                 Button("儲存") {
-                    LockScreenHelper.setPassword(pw, for: device); dismiss()
+                    let value = usePattern ? LockScreenHelper.patternPrefix + pattern.map(String.init).joined() : pw
+                    LockScreenHelper.setPassword(value, for: device); dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(pw.isEmpty)
+                .disabled(!canSave)
             }
         }
         .padding()

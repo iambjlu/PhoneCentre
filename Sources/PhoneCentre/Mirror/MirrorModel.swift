@@ -27,6 +27,10 @@ final class MirrorModel: ObservableObject {
     /// 桌面模式還沒開過任何 App
     @Published var desktopEmpty = true
     @Published var status = DeviceStatus()
+    /// 截圖時的白閃（1 → 0 淡出）
+    @Published var flashOpacity = 0.0
+    /// 由視窗控制器提供：關閉這個視窗
+    var onCloseWindow: (() -> Void)?
     /// 獨立視窗的 App 在手機上被關掉了（例如在主螢幕滑掉）
     @Published var appClosed = false
     private var appSeen = false
@@ -73,7 +77,8 @@ final class MirrorModel: ObservableObject {
         view.onDropFiles = { [weak self] urls in self?.drop(urls) }
         if isVirtualDisplay {
             view.onBack = { [weak self] in self?.navBack() }
-            view.onHome = { [weak self] in self?.navHome() }
+            // 中鍵／⌘⌫：桌面模式送 Home 到該桌面；單一 App 視窗不要因為誤按中鍵就關掉視窗
+            if desktopMode { view.onHome = { [weak self] in self?.navHome() } }
         }
     }
 
@@ -121,11 +126,12 @@ final class MirrorModel: ObservableObject {
         let v = view
         session.onSample = { sample, changed in v.enqueue(sample, formatChanged: changed) }
         session.onDeviceClipboard = { [weak self] text in
-            // 自動同步或 ⌘C／⌘X 取得的手機剪貼簿 → Mac
+            // 自動同步或 ⌘C／⌘X 取得的手機剪貼簿 → Mac（輸入法貼上文字期間不要蓋掉 Mac 的剪貼簿）
+            guard let self, Date() > self.view.clipboardGuardUntil else { return }
             let pb = NSPasteboard.general
             pb.clearContents()
             pb.setString(text, forType: .string)
-            self?.lastPasteboardCount = pb.changeCount
+            self.lastPasteboardCount = pb.changeCount
         }
         view.session = session
         self.session = session
@@ -367,6 +373,16 @@ final class MirrorModel: ObservableObject {
                 Task { @MainActor in await self?.checkAppAlive() }
             })
         }
+        if isVirtualDisplay {
+            // 手機鎖定時虛擬顯示器上的 App 會黑屏，要明確提示
+            timers.append(Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
+                Task { @MainActor in
+                    guard let self else { return }
+                    let l = await LockScreenHelper.isLocked(self.device.client)
+                    if l != self.locked { self.locked = l }
+                }
+            })
+        }
         // 主鏡像與桌面模式都有左側 App 列，需要定時更新
         if !isAppWindow {
             timers.append(Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
@@ -423,7 +439,7 @@ final class MirrorModel: ObservableObject {
     func unlock() {
         Task {
             toast = "正在解鎖…"
-            let ok = await LockScreenHelper.unlock(device, session: session)
+            let ok = await LockScreenHelper.unlock(device, session: isVirtualDisplay ? nil : session)
             toast = ok ? nil : "解鎖未成功，請確認儲存的密碼"
             if ok { locked = false }
             clearToastLater()
@@ -441,11 +457,28 @@ final class MirrorModel: ObservableObject {
         if isVirtualDisplay, let d = displayId { inputKey(KeyMap.back, display: d) } else { key(KeyMap.back) }
     }
 
-    /// 主畫面：主螢幕鏡像是 Home；虛擬顯示器沒有桌面，單一 App 視窗改成回到 App 首頁，桌面模式送 Home 到該顯示器
+    /// 主畫面：主螢幕鏡像是 Home；獨立視窗＝關閉視窗（App 留在背景）；桌面模式送 Home 到該顯示器
     func navHome() {
         guard isVirtualDisplay else { key(KeyMap.home); return }
-        if let app = appPackage { session?.send(.startApp(app)) }
+        if isAppWindow { closeWindow() }
         else if let d = displayId { inputKey(KeyMap.home, display: d) }
+    }
+
+    /// 最近使用：主螢幕走 scrcpy；桌面模式把 APP_SWITCH 送到該顯示器
+    func navRecents() {
+        if isVirtualDisplay, let d = displayId { inputKey(KeyMap.appSwitch, display: d) } else { key(KeyMap.appSwitch) }
+    }
+
+    func closeWindow() { onCloseWindow?() }
+
+    /// 強制停止 App 並關閉視窗
+    func forceStopAndClose() {
+        guard let pkg = appPackage else { return }
+        let c = device.client
+        Task {
+            _ = try? await c.shell("am force-stop \(pkg)")
+            closeWindow()
+        }
     }
 
     private func inputKey(_ code: Int32, display: Int) {
@@ -453,17 +486,18 @@ final class MirrorModel: ObservableObject {
         Task { _ = try? await c.shell("input -d \(display) keyevent \(code)") }
     }
 
-    enum RotationLock { case portrait, landscape, auto }
-
-    func setRotation(_ r: RotationLock) {
-        let cmd: String
-        switch r {
-        case .portrait: cmd = "settings put system accelerometer_rotation 0; settings put system user_rotation 0"
-        case .landscape: cmd = "settings put system accelerometer_rotation 0; settings put system user_rotation 1"
-        case .auto: cmd = "settings put system accelerometer_rotation 1"
-        }
+    /// 鎖定方向：0 = 0°、1 = 90°、2 = 180°、3 = 270°
+    func setRotation(_ r: Int) {
+        status.autoRotate = false
+        status.userRotation = r
         let c = device.client
-        Task { _ = try? await c.shell(cmd) }
+        Task { _ = try? await c.shell("settings put system accelerometer_rotation 0; settings put system user_rotation \(r)") }
+    }
+
+    func setAutoRotate(_ on: Bool) {
+        status.autoRotate = on
+        let c = device.client
+        Task { _ = try? await c.shell("settings put system accelerometer_rotation \(on ? 1 : 0)") }
     }
 
     func toggleScreenOff() {
@@ -482,19 +516,36 @@ final class MirrorModel: ObservableObject {
     }
 
     func screenshot() {
+        flash()
         Task {
-            let target = isVirtualDisplay ? displayId.map { " -d \($0)" } ?? "" : ""
-            guard let data = try? await device.client.exec("screencap\(target) -p", timeout: 20), !data.isEmpty else {
+            guard let png = await captureScreenPNG() else {
                 toast = "截圖失敗"; clearToastLater(); return
             }
             let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HH.mm.ss"
             let url = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask)[0]
                 .appendingPathComponent("\(device.displayName) 截圖 \(f.string(from: Date())).png")
-            try? data.write(to: url)
+            do { try png.write(to: url) } catch { toast = "截圖失敗"; clearToastLater(); return }
             toast = "已存到桌面：\(url.lastPathComponent)"
             clearToastLater()
         }
     }
+
+    /// 像 iPhone 截圖：先全白，再淡出
+    private func flash() {
+        flashOpacity = 1
+        DispatchQueue.main.async { withAnimation(.easeOut(duration: 0.5)) { self.flashOpacity = 0 } }
+    }
+
+    /// 主螢幕用 screencap；虛擬顯示器（或 screencap 失敗，例如 Android 14 對虛擬顯示器的 -d 無效）改取鏡像影像的關鍵幀
+    private func captureScreenPNG() async -> Data? {
+        if !isVirtualDisplay,
+           let data = try? await device.client.exec("screencap -p", timeout: 20), Self.isPNG(data) { return data }
+        if isVirtualDisplay, let d = displayId,
+           let data = try? await device.client.exec("screencap -d \(d) -p", timeout: 20), Self.isPNG(data) { return data }
+        return await session?.captureFrame()
+    }
+
+    private static func isPNG(_ d: Data) -> Bool { d.count > 100 && d.prefix(4) == Data([0x89, 0x50, 0x4E, 0x47]) }
 
     func applyVideoOptions(_ o: VideoOptions) {
         videoOptions = o

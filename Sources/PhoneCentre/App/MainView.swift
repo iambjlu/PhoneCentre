@@ -20,6 +20,7 @@ struct MainView: View {
     @State private var selection: String?
     @State private var tab: DeviceTab = .overview
     @State private var showAdd = false
+    @State private var editingHost: RemoteHost?
 
     var body: some View {
         NavigationSplitView {
@@ -29,6 +30,7 @@ struct MainView: View {
             detail
         }
         .sheet(isPresented: $showAdd) { AddDeviceSheet() }
+        .sheet(item: $editingHost) { RemoteHostEditSheet(host: $0) }
         .onAppear { if selection == nil { selection = dm.onlineDevices.first?.id } }
         .onChange(of: dm.devices) { _, list in
             if selection == nil || !list.contains(where: { $0.id == selection }) {
@@ -62,12 +64,36 @@ struct MainView: View {
                 }
             }
             ForEach(settings.remoteHosts) { h in
-                Section("\(h.name)（遠端）") {
-                    let ds = dm.devices.filter { $0.endpoint.remoteID == h.id }
+                let ds = dm.devices.filter { $0.endpoint.remoteID == h.id }
+                Section {
                     ForEach(ds) { d in DeviceRow(device: d).tag(d.id) }
                     if ds.isEmpty {
-                        Text(remote.status[h.id] ?? "未連線").font(.caption).foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(remote.status[h.id] ?? "未連線").font(.caption).foregroundStyle(.secondary)
+                            Button("重新連線") { remote.reconnect(h) }.controlSize(.small)
+                        }
                     }
+                } header: {
+                    HStack(spacing: 6) {
+                        Circle().fill(ds.isEmpty ? Color.orange : .green).frame(width: 7, height: 7)
+                        Text("\(h.name)（遠端）")
+                        Spacer()
+                        Menu {
+                            Button("重新連線") { remote.reconnect(h) }
+                            Button("編輯…") { editingHost = h }
+                            Divider()
+                            Button("移除", role: .destructive) {
+                                settings.remoteHosts.removeAll { $0.id == h.id }
+                                settings.setSecret(h.secretKey, nil)
+                                remote.apply()
+                            }
+                        } label: { Image(systemName: "ellipsis.circle") }
+                            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                    }
+                }
+                .contextMenu {
+                    Button("重新連線") { remote.reconnect(h) }
+                    Button("編輯…") { editingHost = h }
                 }
             }
         }

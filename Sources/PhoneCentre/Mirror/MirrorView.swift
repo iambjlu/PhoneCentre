@@ -287,12 +287,23 @@ final class MirrorView: NSView, NSTextInputClient {
         injectText(s)
     }
 
-    /// ASCII 用 INJECT_TEXT；中文等非 ASCII 透過剪貼簿貼上（Android 的 KeyCharacterMap 無法直接注入）
+    /// 輸入法貼上文字期間，手機剪貼簿的回傳不要蓋掉 Mac 的剪貼簿
+    var clipboardGuardUntil = Date.distantPast
+
+    /// ASCII 用 INJECT_TEXT；中文等非 ASCII 透過剪貼簿貼上（Android 的 KeyCharacterMap 無法直接注入）。
+    /// 貼上前先記住手機目前的剪貼簿（就是 Mac 同步過去的那份），貼完再放回去。
     func injectText(_ s: String) {
+        guard let session else { return }
         if s.allSatisfy({ $0.isASCII }) {
-            session?.send(.text(s))
-        } else {
-            session?.setClipboard(s, paste: true)
+            session.send(.text(s))
+            return
+        }
+        let saved = NSPasteboard.general.string(forType: .string)
+        clipboardGuardUntil = Date().addingTimeInterval(2)
+        session.setClipboard(s, paste: true)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self, weak session] in
+            if let saved, let session { session.setClipboard(saved, paste: false) }
+            self?.clipboardGuardUntil = Date().addingTimeInterval(0.8)
         }
     }
 

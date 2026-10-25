@@ -25,6 +25,7 @@ struct AddDeviceSheet: View {
 
 /// adb connect／adb pair，以及 mDNS 找到的裝置
 struct WirelessAddView: View {
+    @ObservedObject private var dm = DeviceManager.shared
     @State private var address = ""
     @State private var pairAddress = ""
     @State private var pairCode = ""
@@ -34,9 +35,32 @@ struct WirelessAddView: View {
 
     var body: some View {
         Form {
+            Section("USB 轉無線") {
+                let usb = dm.onlineDevices.filter { !$0.isWireless && !$0.isRemote }
+                if usb.isEmpty {
+                    Text("用 USB 線接上手機（已開啟 USB 偵錯），就能一鍵切換成無線連線。").font(.caption).foregroundStyle(.secondary)
+                }
+                ForEach(usb) { d in
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text(d.displayName)
+                            Text("執行 adb tcpip 5555 後自動連線").font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("切換為無線") {
+                            busy = true
+                            Task {
+                                message = (await DeviceManager.shared.enableWireless(d)).1
+                                busy = false
+                            }
+                        }
+                        .disabled(busy)
+                    }
+                }
+            }
             Section("連線（adb connect）") {
                 HStack {
-                    TextField("IP:Port，例如 120.117.9.140:5555", text: $address)
+                    TextField("IP:Port，例如 172.20.10.2:5555", text: $address)
                         .onSubmit(connect)
                     Button("連線", action: connect).disabled(address.isEmpty || busy)
                 }
@@ -108,6 +132,7 @@ struct RemoteAddView: View {
     @State private var host = ""
     @State private var port = "47500"
     @State private var password = ""
+    @State private var editing: RemoteHost?
 
     var body: some View {
         Form {
@@ -147,6 +172,7 @@ struct RemoteAddView: View {
                         }
                         Spacer()
                         Button("重連") { remote.reconnect(h) }
+                        Button("編輯…") { editing = h }
                         Button(role: .destructive) {
                             settings.remoteHosts.removeAll { $0.id == h.id }
                             settings.setSecret(h.secretKey, nil)
@@ -157,6 +183,7 @@ struct RemoteAddView: View {
             }
         }
         .formStyle(.grouped)
+        .sheet(item: $editing) { RemoteHostEditSheet(host: $0) }
     }
 }
 
@@ -180,4 +207,44 @@ final class PhoneCentreBrowser: ObservableObject {
     }
 
     deinit { browser?.cancel() }
+}
+
+/// 編輯已加入的遠端 PhoneCentre
+struct RemoteHostEditSheet: View {
+    let host: RemoteHost
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var settings = AppSettings.shared
+    @State private var name = ""
+    @State private var address = ""
+    @State private var port = ""
+    @State private var password = ""
+
+    var body: some View {
+        Form {
+            TextField("名稱", text: $name)
+            TextField("主機（IP 或網域）", text: $address)
+            TextField("Port", text: $port)
+            SecureField("密碼（留空表示不變）", text: $password)
+            HStack {
+                Spacer()
+                Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("儲存並重新連線") {
+                    if let i = settings.remoteHosts.firstIndex(where: { $0.id == host.id }) {
+                        settings.remoteHosts[i].name = name.isEmpty ? address : name
+                        settings.remoteHosts[i].host = address
+                        settings.remoteHosts[i].port = Int(port) ?? 47_500
+                    }
+                    if !password.isEmpty { settings.setSecret(host.secretKey, password) }
+                    RemoteManager.shared.apply()
+                    if let h = settings.remoteHosts.first(where: { $0.id == host.id }) { RemoteManager.shared.reconnect(h) }
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(address.isEmpty)
+            }
+        }
+        .formStyle(.grouped)
+        .frame(width: 420)
+        .onAppear { name = host.name; address = host.host; port = String(host.port) }
+    }
 }

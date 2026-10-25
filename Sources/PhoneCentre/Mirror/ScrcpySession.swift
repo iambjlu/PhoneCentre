@@ -213,6 +213,16 @@ final class ScrcpySession {
         if let err { throw err }
     }
 
+    // MARK: 截圖（取鏡像影像的下一個關鍵幀）
+
+    /// 要求新的關鍵幀並解碼成 PNG。虛擬顯示器的 screencap 在新版 Android 不一定能用，所以用鏡像影像。
+    func captureFrame() async -> Data? {
+        await withCheckedContinuation { cont in
+            decoder.captureNextKeyFrame { png in cont.resume(returning: png) }
+            send(.resetVideo)
+        }
+    }
+
     // MARK: 控制
 
     func send(_ msg: ControlMessage) {

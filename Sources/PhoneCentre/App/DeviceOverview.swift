@@ -22,6 +22,8 @@ struct DeviceOverview: View {
                     }
                 }
 
+                PinnedAppsStrip(device: device, catalog: DeviceManager.shared.catalog(for: device))
+
                 HStack(spacing: 12) {
                     BigButton("鏡像畫面", "rectangle.on.rectangle") { WindowManager.shared.openMirror(device) }
                     BigButton("桌面模式(Beta)", "desktopcomputer") { WindowManager.shared.openDesktop(device) }
@@ -55,8 +57,6 @@ struct DeviceOverview: View {
                         return true
                     }
 
-                Text("Samsung DeX 需要實體的外接螢幕（或 Samsung 自己的無線 DeX）才會啟動，用 adb 建立的虛擬顯示器無法觸發。「桌面模式」改用 Android 內建的桌面模式：建立一個橫向、帶系統列的虛擬顯示器，可在裡面同時開多個 App。")
-                    .font(.caption).foregroundStyle(.secondary)
             }
             .padding(24)
             .frame(maxWidth: 760, alignment: .leading)
@@ -92,6 +92,49 @@ struct DeviceOverview: View {
         panel.allowsMultipleSelection = true
         guard panel.runModal() == .OK else { return }
         Task { await DropHandler.handle(panel.urls, device: device) { message = $0 } }
+    }
+}
+
+/// 總覽最上面：釘選的 App 與已開啟的 App
+struct PinnedAppsStrip: View {
+    let device: Device
+    @ObservedObject var catalog: AppCatalog
+    @ObservedObject private var settings = AppSettings.shared
+
+    private var packages: [String] {
+        let pins = settings.pinned(for: device)
+        return pins + catalog.running.filter { !pins.contains($0) }
+    }
+
+    var body: some View {
+        Group {
+            if !packages.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 16) {
+                        ForEach(packages, id: \.self) { pkg in
+                            VStack(spacing: 5) {
+                                AppIconView(catalog: catalog, package: pkg, size: 52)
+                                    .shadow(color: .black.opacity(0.15), radius: 3, y: 1)
+                                Text(catalog.label(for: pkg)).font(.caption).lineLimit(1).frame(width: 72)
+                                Circle().fill(catalog.running.contains(pkg) ? Color.primary.opacity(0.6) : .clear).frame(width: 4, height: 4)
+                            }
+                            .contentShape(Rectangle())
+                            .onTapGesture { WindowManager.shared.launch(device, package: pkg) }
+                            .contextMenu {
+                                Button(settings.isPinned(pkg, on: device) ? "取消釘選" : "釘選到最上面") { settings.togglePin(pkg, on: device) }
+                                Button("在獨立視窗開啟") { WindowManager.shared.openApp(device, package: pkg) }
+                                Button("強制停止") { Task { await catalog.forceStop(pkg) } }
+                            }
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+        }
+        .task(id: device.id) {
+            if catalog.apps.isEmpty { await catalog.reload() }
+            await catalog.refreshTasks()
+        }
     }
 }
 

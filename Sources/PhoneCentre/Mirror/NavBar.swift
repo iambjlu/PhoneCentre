@@ -1,66 +1,100 @@
 import AppKit
 import SwiftUI
 
+// MARK: 毛玻璃
+
+/// 深色毛玻璃底（視窗後面的桌面會透出來）
+struct GlassBackground: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let v = NSVisualEffectView()
+        v.material = .hudWindow
+        v.blendingMode = .behindWindow
+        v.state = .active
+        v.appearance = NSAppearance(named: .vibrantDark)
+        return v
+    }
+    func updateNSView(_ v: NSVisualEffectView, context: Context) {}
+}
+
+extension View {
+    /// 疊在畫面上的東西統一用毛玻璃當底：新系統用液態玻璃，舊系統用材質
+    @ViewBuilder func glassCard(cornerRadius: CGFloat = 12) -> some View {
+        if #available(macOS 26.0, *) {
+            self.glassEffect(.regular, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        } else {
+            self.background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        }
+    }
+
+    /// 側欄背景：深色毛玻璃（液態玻璃）
+    @ViewBuilder func glassColumn() -> some View {
+        if #available(macOS 26.0, *) {
+            self.background { GlassBackground() }
+                .glassEffect(.regular.tint(.black.opacity(0.25)), in: Rectangle())
+        } else {
+            self.background { GlassBackground() }
+        }
+    }
+}
+
 // MARK: 狀態指示
 
 /// 類似新版 iPhone 的狀態指示：外環＝電池，中間＝Wi-Fi 或行動網路世代，下方＝主要 SIM 卡訊號格
 struct StatusIndicator: View {
     let status: DeviceStatus
-    var size: CGFloat = 34
+    var size: CGFloat = 30
 
     private var level: Double { status.batteryLevel < 0 ? 0 : Double(status.batteryLevel) / 100 }
     private var ringColor: Color {
         if status.charging { return .green }
         if status.batteryLevel >= 0 && status.batteryLevel <= 20 { return .red }
-        return Color.primary.opacity(0.55)
+        return Color.white.opacity(0.75)
     }
 
     var body: some View {
-        VStack(spacing: 1) {
-            if status.batteryLevel >= 0 {
-                HStack(spacing: 1) {
-                    if status.charging { Image(systemName: "bolt.fill").font(.system(size: 8, weight: .bold)) }
-                    Text("\(status.batteryLevel)%")
-                        .font(.system(size: 10, weight: .semibold, design: .rounded)).monospacedDigit()
-                }
-                .foregroundStyle(status.charging ? Color.green : Color.primary.opacity(0.7))
-            }
-            ring
-        }
-        .help(status.summary)
-    }
-
-    private var ring: some View {
         ZStack {
             // 缺口在下方的 270° 圓環，從左下開始順時針
             Circle().trim(from: 0, to: 0.75)
-                .stroke(Color.primary.opacity(0.14), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                .stroke(Color.white.opacity(0.18), style: StrokeStyle(lineWidth: 2.6, lineCap: .round))
                 .rotationEffect(.degrees(135))
             Circle().trim(from: 0, to: 0.75 * level)
-                .stroke(ringColor, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                .stroke(ringColor, style: StrokeStyle(lineWidth: 2.6, lineCap: .round))
                 .rotationEffect(.degrees(135))
-            center.offset(y: -size * 0.04)
+            // 電量百分比放在環上方（原本閃電的位置）
+            if status.batteryLevel >= 0 {
+                Text("\(status.batteryLevel)%")
+                    .font(.system(size: 7.5, weight: .bold, design: .rounded)).monospacedDigit()
+                    .foregroundStyle(status.charging ? Color.green : Color.white.opacity(0.9))
+                    .padding(.horizontal, 2)
+                    .background(Capsule().fill(Color.black.opacity(0.55)))
+                    .offset(y: -size / 2)
+            }
+            center.offset(y: -size * 0.02)
             if status.hasSim {
                 // 訊號格沿著外環的圓弧排在缺口裡，跟電池環接成一個圓
-                let r = size / 2 - 1.5
+                let r = size / 2 - 1.3
                 ForEach(0..<4, id: \.self) { i in
-                    let a = Angle.degrees(120 - Double(i) * 20).radians
-                    Circle().fill(Color.primary.opacity(i < status.signalBars ? 0.8 : 0.22))
-                        .frame(width: 3.2, height: 3.2)
+                    let a = Angle.degrees(122 - Double(i) * 21.3).radians
+                    Circle().fill(Color.white.opacity(i < status.signalBars ? 0.95 : 0.25))
+                        .frame(width: 3, height: 3)
                         .offset(x: r * CGFloat(cos(a)), y: r * CGFloat(sin(a)))
                 }
             }
         }
         .frame(width: size, height: size)
+        .padding(.top, 6)
+        .help(status.summary)
     }
 
     @ViewBuilder private var center: some View {
         if status.wifi {
-            Image(systemName: "wifi").font(.system(size: size * 0.32, weight: .semibold))
+            Image(systemName: "wifi", variableValue: Double(status.wifiLevel) / 4)
+                .font(.system(size: size * 0.34, weight: .semibold))
+                .foregroundStyle(.white)
         } else if let t = status.cellularTech {
-            Text(t).font(.system(size: size * 0.28, weight: .bold, design: .rounded))
+            Text(t).font(.system(size: size * 0.3, weight: .bold, design: .rounded)).foregroundStyle(.white)
         } else {
-            Image(systemName: "wifi.slash").font(.system(size: size * 0.28, weight: .semibold)).foregroundStyle(.secondary)
+            Image(systemName: "wifi.slash").font(.system(size: size * 0.3, weight: .semibold)).foregroundStyle(.white.opacity(0.5))
         }
     }
 }
@@ -79,6 +113,7 @@ struct NavButton<Icon: View>: View {
         Button(action: action) { NavButtonFace(hover: hover, content: icon) }
             .buttonStyle(.plain)
             .disabled(!enabled)
+            .opacity(enabled ? 1 : 0.35)
             .onHover { hover = $0 }
             .help(help)
     }
@@ -90,9 +125,9 @@ struct NavButtonFace<Content: View>: View {
     var body: some View {
         content()
             .font(.system(size: 17, weight: .regular))
-            .foregroundStyle(.primary.opacity(0.85))
+            .foregroundStyle(.white.opacity(0.9))
             .frame(width: 48, height: 34)
-            .background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(hover ? 0.12 : 0)))
+            .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(hover ? 0.16 : 0)))
             .contentShape(Rectangle())
     }
 }
@@ -117,9 +152,27 @@ struct NavMenu<Icon: View, Items: View>: View {
 
 func sfIcon(_ name: String) -> some View { Image(systemName: name) }
 
+/// 把 SF Symbol 旋轉後做成選單用的圖示（選單裡的 View 修飾無效，所以要先畫成圖）
+func rotatedSymbol(_ name: String, degrees: Double) -> Image {
+    guard let base = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+        .withSymbolConfiguration(.init(pointSize: 15, weight: .regular)) else { return Image(systemName: name) }
+    let side = max(base.size.width, base.size.height) + 2
+    let img = NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
+        let t = NSAffineTransform()
+        t.translateX(by: rect.midX, yBy: rect.midY)
+        t.rotate(byDegrees: CGFloat(degrees))
+        t.translateX(by: -base.size.width / 2, yBy: -base.size.height / 2)
+        t.concat()
+        base.draw(at: .zero, from: .zero, operation: .sourceOver, fraction: 1)
+        return true
+    }
+    img.isTemplate = true
+    return Image(nsImage: img)
+}
+
 // MARK: 三星風格的返回／主畫面／多工
 
-/// One UI 的三個系統按鍵：返回「<」、主畫面「○」、多工「|||」
+/// One UI 的三個系統按鍵：返回「<」、主畫面「圓角方形」、多工「|||」
 enum SamsungNavIcon {
     struct Back: View {
         var body: some View {
@@ -158,26 +211,38 @@ enum SamsungNavIcon {
     }
 }
 
-// MARK: 左側欄（狀態指示 ＋ App 列 ＋ 導覽列）
+/// 強制停止：六角形加叉叉
+struct StopAppIcon: View {
+    var body: some View {
+        ZStack {
+            Image(systemName: "hexagon")
+            Image(systemName: "xmark").font(.system(size: 8, weight: .bold))
+        }
+    }
+}
+
+// MARK: 右側欄（狀態指示 ＋ App 列 ＋ 導覽列）
 
 struct SideColumn: View {
     @ObservedObject var model: MirrorModel
     @ObservedObject var catalog: AppCatalog
     @Binding var showVideoSettings: Bool
+    @Binding var showLocation: Bool
     @State private var showLauncher = false
 
     var body: some View {
         VStack(spacing: 0) {
-            StatusIndicator(status: model.status).padding(.vertical, 8)
+            StatusIndicator(status: model.status).padding(.bottom, 6)
             if model.isAppWindow {
                 Spacer(minLength: 0)
             } else {
                 AppRail(catalog: catalog) { pkg in model.launch(pkg) }
             }
-            Divider().padding(.horizontal, 10)
+            Divider().padding(.horizontal, 10).opacity(0.4)
             navBar.padding(.vertical, 6)
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .environment(\.colorScheme, .dark)
+        .glassColumn()
     }
 
     private var navBar: some View {
@@ -187,12 +252,14 @@ struct SideColumn: View {
                     VideoSettingsPopover(options: model.videoOptions) { model.applyVideoOptions($0) }
                 }
             NavMenu(help: "輸入方式：\(model.keyboardMode.title)") {
-                sfIcon(model.keyboardMode == .physical ? "keyboard" : "character.bubble")
+                sfIcon(model.keyboardMode == .physical ? "keyboard" : "keyboard.fill")
             } items: {
-                Picker("輸入方式", selection: $model.keyboardMode) {
-                    ForEach(KeyboardMode.allCases) { Text($0.title).tag($0) }
+                ForEach(KeyboardMode.allCases) { m in
+                    Button { model.keyboardMode = m } label: {
+                        Label(m.title + (model.keyboardMode == m ? "  ✓" : ""),
+                              systemImage: m == .physical ? "keyboard" : "keyboard.fill")
+                    }
                 }
-                .pickerStyle(.inline)
             }
             if model.desktopMode {
                 NavButton(help: "在這個桌面開啟 App") { showLauncher.toggle() } icon: { sfIcon("square.grid.2x2") }
@@ -200,7 +267,7 @@ struct SideColumn: View {
                         MiniLauncher(catalog: catalog) { pkg in showLauncher = false; model.launch(pkg) }
                     }
             }
-            NavButton(help: "虛擬定位（尚未提供）") { model.showToast("虛擬定位尚未提供") } icon: { sfIcon("location") }
+            NavButton(help: "模擬定位") { showLocation = true } icon: { sfIcon("location") }
             NavMenu(help: "聲音") { sfIcon("speaker.wave.2") } items: {
                 Button("音量 +") { model.key(KeyMap.volumeUp) }
                 Button("音量 −") { model.key(KeyMap.volumeDown) }
@@ -214,11 +281,15 @@ struct SideColumn: View {
                 if model.isVirtualDisplay {
                     Button("旋轉視窗方向") { model.rotateVirtualDisplay() }
                 } else {
-                    Button("旋轉 90°") { model.session?.send(.rotateDevice) }
+                    ForEach([(0, "直向", 0.0), (1, "橫向（向左）", 90.0), (2, "直向（倒立）", 180.0), (3, "橫向（向右）", 270.0)], id: \.0) { r in
+                        Button { model.setRotation(r.0) } label: {
+                            Label {
+                                Text(r.1 + (!model.status.autoRotate && model.status.userRotation == r.0 ? "  ✓" : ""))
+                            } icon: { rotatedSymbol("iphone", degrees: r.2) }
+                        }
+                    }
                     Divider()
-                    Button("直向（鎖定）") { model.setRotation(.portrait) }
-                    Button("橫向（鎖定）") { model.setRotation(.landscape) }
-                    Button("自動旋轉") { model.setRotation(.auto) }
+                    Toggle("自動旋轉", isOn: Binding(get: { model.status.autoRotate }, set: { model.setAutoRotate($0) }))
                 }
             }
             if !model.isVirtualDisplay {
@@ -226,24 +297,28 @@ struct SideColumn: View {
                     icon: { sfIcon(model.screenOff ? "iphone.slash" : "iphone") }
                 NavButton(help: "電源") { model.key(KeyMap.power) } icon: { sfIcon("power") }
             }
-            Divider().padding(.horizontal, 10).padding(.vertical, 2)
+            Divider().padding(.horizontal, 10).padding(.vertical, 2).opacity(0.4)
             recentsButton
-            NavButton(help: model.isVirtualDisplay ? "回到 App 首頁" : "主畫面（中鍵）") { model.navHome() } icon: { SamsungNavIcon.Home() }
+            homeButton
             NavButton(help: "返回（右鍵／Esc）") { model.navBack() } icon: { SamsungNavIcon.Back() }
         }
     }
 
-    @ViewBuilder private var recentsButton: some View {
-        if model.isVirtualDisplay {
-            // 虛擬顯示器沒有自己的最近使用畫面：改成在這個視窗切換 App
-            NavMenu(help: "在這個視窗切換 App") { SamsungNavIcon.Recents() } items: {
-                ForEach(catalog.running + catalog.recent, id: \.self) { pkg in
-                    Button(catalog.label(for: pkg)) { model.launch(pkg) }
-                }
-            }
-            .onAppear { Task { await catalog.refreshTasks() } }
+    /// 獨立視窗：關閉視窗（App 留在背景）；桌面模式：該桌面的 Home；主螢幕：手機 Home
+    @ViewBuilder private var homeButton: some View {
+        if model.isAppWindow {
+            NavButton(help: "關閉視窗（App 繼續在背景執行）") { model.closeWindow() } icon: { sfIcon("xmark.square") }
         } else {
-            NavButton(help: "最近使用") { model.key(KeyMap.appSwitch) } icon: { SamsungNavIcon.Recents() }
+            NavButton(help: model.isVirtualDisplay ? "桌面 Home" : "主畫面（中鍵）") { model.navHome() } icon: { SamsungNavIcon.Home() }
+        }
+    }
+
+    /// 獨立視窗：強制停止並關閉視窗；桌面模式：該桌面的最近使用；主螢幕：手機的最近使用
+    @ViewBuilder private var recentsButton: some View {
+        if model.isAppWindow {
+            NavButton(help: "強制停止 App 並關閉視窗") { model.forceStopAndClose() } icon: { StopAppIcon() }
+        } else {
+            NavButton(help: "最近使用") { model.navRecents() } icon: { SamsungNavIcon.Recents() }
         }
     }
 }

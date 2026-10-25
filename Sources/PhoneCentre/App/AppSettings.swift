@@ -71,6 +71,8 @@ struct SettingsData: Codable, Equatable {
     var cacheClearPolicy: CacheClearPolicy = .afterDays
     var cacheClearDays = 7
     var offerTouchIDUnlock = true
+    /// 每台裝置（CacheManager.key）釘選的 App 套件名稱，依釘選順序
+    var pinnedApps: [String: [String]] = [:]
     /// 密碼類資料也寫進同步資料夾（明碼）
     var syncSecrets = false
     var secrets: [String: String] = [:]
@@ -106,6 +108,19 @@ final class AppSettings: ObservableObject {
         data = SettingsData()
         data = loadData() ?? SettingsData()
         startWatching()
+    }
+
+    // MARK: 釘選 App
+
+    func pinned(for device: Device) -> [String] { data.pinnedApps[CacheManager.key(for: device)] ?? [] }
+
+    func isPinned(_ pkg: String, on device: Device) -> Bool { pinned(for: device).contains(pkg) }
+
+    func togglePin(_ pkg: String, on device: Device) {
+        let k = CacheManager.key(for: device)
+        var list = data.pinnedApps[k] ?? []
+        if let i = list.firstIndex(of: pkg) { list.remove(at: i) } else { list.append(pkg) }
+        data.pinnedApps[k] = list
     }
 
     // MARK: 存取

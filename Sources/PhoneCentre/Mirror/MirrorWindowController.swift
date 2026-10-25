@@ -23,6 +23,9 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
                               backing: .buffered, defer: false)
         window.title = model.title
         window.isReleasedWhenClosed = false
+        // 視窗透明，右側欄的毛玻璃才透得出桌面
+        window.isOpaque = false
+        window.backgroundColor = .clear
         window.contentView = NSHostingView(rootView: MirrorContentView(model: model))
         window.tabbingMode = .disallowed
         window.contentMinSize = NSSize(width: 240 + MirrorLayout.railWidth, height: MirrorLayout.minContentHeight)
@@ -41,6 +44,7 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
         window.delegate = self
         model.onFrameSize = { [weak self] size in self?.fit(to: size) }
         model.onRotateWindow = { [weak self] in self?.rotateWindow() }
+        model.onCloseWindow = { [weak self] in self?.window?.performClose(nil) }
         // App 名稱載入後更新標題
         model.catalog.$apps
             .receive(on: DispatchQueue.main)

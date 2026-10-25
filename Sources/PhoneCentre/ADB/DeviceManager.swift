@@ -189,6 +189,21 @@ final class DeviceManager: ObservableObject {
         return (r.ok, r.message)
     }
 
+    /// USB 裝置轉無線：`adb tcpip 5555`，取得手機 Wi-Fi IP 後 `adb connect`
+    func enableWireless(_ device: Device) async -> (Bool, String) {
+        let c = device.client
+        let out = (try? await c.shell("ip -f inet addr show wlan0 | grep -o 'inet [0-9.]*' | head -1")) ?? ""
+        guard let ip = out.split(separator: " ").last.map(String.init), !ip.isEmpty else {
+            return (false, "取不到手機的 Wi-Fi IP，請確認手機已連上 Wi-Fi")
+        }
+        guard let r = try? await c.cli(["tcpip", "5555"]), r.status == 0 else {
+            return (false, "adb tcpip 5555 失敗")
+        }
+        try? await Task.sleep(nanoseconds: 1_800_000_000)
+        let result = await connect("\(ip):5555")
+        return result.0 ? (true, "已切換為無線：\(ip):5555，現在可以拔掉 USB") : result
+    }
+
     func disconnect(_ device: Device) async {
         settings.savedEndpoints.removeAll { $0.address == device.serial }
         await AdbClient.disconnect(device.serial, endpoint: device.endpoint)

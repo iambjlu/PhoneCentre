@@ -9,7 +9,21 @@ struct LaunchpadView: View {
     @State private var filter = 0     // 0 全部、1 使用者、2 系統
     @State private var confirmUninstall: AppEntry?
 
+    /// 釘選的排最前面，其次是已開啟的，最後是其他（各自維持原本順序）
     private var shown: [AppEntry] {
+        let pins = settings.pinned(for: device)
+        let running = catalog.running
+        func rank(_ a: AppEntry) -> Int {
+            if let i = pins.firstIndex(of: a.package) { return i }
+            if let i = running.firstIndex(of: a.package) { return 1_000 + i }
+            return 100_000
+        }
+        let filtered = filteredApps
+        let indexed = Array(filtered.enumerated())
+        return indexed.sorted { (rank($0.element), $0.offset) < (rank($1.element), $1.offset) }.map(\.element)
+    }
+
+    private var filteredApps: [AppEntry] {
         catalog.apps.filter { a in
             (filter == 0 || (filter == 1 && !a.isSystem) || (filter == 2 && a.isSystem))
                 && (query.isEmpty || a.label.localizedCaseInsensitiveContains(query) || a.package.localizedCaseInsensitiveContains(query))
@@ -52,6 +66,12 @@ struct LaunchpadView: View {
                                 ZStack(alignment: .bottom) {
                                     AppIconView(catalog: catalog, package: app.package, size: 64)
                                         .shadow(color: .black.opacity(0.15), radius: 3, y: 1)
+                                    if settings.isPinned(app.package, on: device) {
+                                        Image(systemName: "pin.fill").font(.system(size: 9)).foregroundStyle(.white)
+                                            .padding(4).background(Circle().fill(Color.accentColor))
+                                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                                            .offset(x: 6, y: -4)
+                                    }
                                 }
                                 Text(app.label).font(.caption).lineLimit(1).truncationMode(.tail)
                                 Circle().fill(catalog.running.contains(app.package) ? Color.primary.opacity(0.6) : .clear)
@@ -82,6 +102,10 @@ struct LaunchpadView: View {
 
     @ViewBuilder
     private func menu(_ app: AppEntry) -> some View {
+        Button(settings.isPinned(app.package, on: device) ? "取消釘選" : "釘選到最上面") {
+            settings.togglePin(app.package, on: device)
+        }
+        Divider()
         Button("在獨立視窗開啟") { WindowManager.shared.openApp(device, package: app.package) }
         Button("在手機主螢幕開啟") {
             Task { await catalog.launch(app.package) }
