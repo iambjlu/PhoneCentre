@@ -27,9 +27,11 @@ struct MainView: View {
     @State private var editingHost: RemoteHost?
 
     var body: some View {
-        NavigationSplitView {
+        // 側邊欄固定顯示：用固定的可見狀態，並拿掉收合按鈕
+        NavigationSplitView(columnVisibility: .constant(.all)) {
             sidebar
-                .navigationSplitViewColumnWidth(min: 220, ideal: 260)
+                .navigationSplitViewColumnWidth(236)
+                .toolbar(removing: .sidebarToggle)
         } detail: {
             detail
         }

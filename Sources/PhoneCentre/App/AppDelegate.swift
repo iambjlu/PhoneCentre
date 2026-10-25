@@ -52,7 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                              styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                              backing: .buffered, defer: false)
             w.title = "手機中心"
-            w.minSize = NSSize(width: 1160, height: 560)
+            w.minSize = NSSize(width: 1020, height: 830)
             w.isReleasedWhenClosed = false
             // 標準視窗與標準元件：用最新 SDK 連結，系統會自動套用 Liquid Glass（側邊欄、工具列、分頁、按鈕）
             w.isOpaque = false
@@ -110,26 +110,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appMenu.addItem(withTitle: "結束", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
         main.addItem(appItem)
-
-        let editItem = NSMenuItem()
-        let edit = NSMenu(title: "編輯")
-        edit.addItem(withTitle: "還原", action: Selector(("undo:")), keyEquivalent: "z")
-        edit.addItem(withTitle: "重做", action: Selector(("redo:")), keyEquivalent: "Z")
-        edit.addItem(.separator())
-        edit.addItem(withTitle: "剪下", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        edit.addItem(withTitle: "拷貝", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        edit.addItem(withTitle: "貼上", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        edit.addItem(withTitle: "全選", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
-        editItem.submenu = edit
-        main.addItem(editItem)
-
-        let winItem = NSMenuItem()
-        let win = NSMenu(title: "視窗")
-        win.addItem(withTitle: "關閉", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
-        win.addItem(withTitle: "縮到最小", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
-        winItem.submenu = win
-        main.addItem(winItem)
-        NSApp.windowsMenu = win
 
         NSApp.mainMenu = main
     }
