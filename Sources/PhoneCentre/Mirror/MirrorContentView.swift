@@ -12,8 +12,9 @@ enum MirrorLayout {
     static let railWidth: CGFloat = 76
     static let toolbarHeight: CGFloat = 0
     static let minContentHeight: CGFloat = 560
-    /// 主螢幕鏡像在直向時的視窗最小高度（含標題列；量測使用中的鏡像視窗：357×621）
-    static let portraitMinFrameHeight: CGFloat = 621
+    /// 主螢幕鏡像在直向時的視窗最小大小（含標題列；照使用者截圖量到的鏡像視窗：364×636）
+    static let portraitMinFrameWidth: CGFloat = 364
+    static let portraitMinFrameHeight: CGFloat = 636
 }
 
 /// 鏡像視窗內容：手機畫面 ＋ 右側欄（狀態指示 + App 列 + 導覽列）

@@ -192,7 +192,7 @@ Mac 虛擬 keyCode（與鍵盤配置、輸入法無關）→ Android keycode；�
 鏡像視窗內容：畫面在左，右側 `SideColumn`（寬度 `MirrorLayout.railWidth`，毛玻璃，沒有上方工具列）內含 `AppRail`（主鏡像與桌面模式；分成兩塊獨立的液態玻璃盤子：第一塊只放現在正在用的 App（`catalog.foreground`，只有一個，完整顯示、不捲動）；第二塊放其他——已開啟的喜好項目 → 其他已開啟的 App，一條分隔線，分隔線之後才是還沒開的喜好項目（空間不夠時第二塊先縮小，放不下時上下有箭頭可以捲動；排序來自 `AppCatalog.barOrder`；右鍵選單由上到下：強制停止、在獨立視窗開啟、（分隔線）加入／移除喜好項目；App 列、啟動台、總覽三處用的是同一份喜好項目清單，在任何一處加入或移除，其他兩處都會一起變），執行中的右邊有小圓點，只有目前在最上層的那個 App 拉長成圓角短線（`RunningMark`，啟動台、總覽、選單列同樣規則），不再顯示最近使用但已關閉的 App；可把圖示往左或往右拖出 App 列超過距離後放開，就在放開位置以獨立視窗開啟，拖曳時由 `DragGhost` 顯示跟著游標的圖示）、解鎖橫幅、App 已關閉提示（「XXX 已關閉」＋打開按鈕）、鎖定提示、置中的提示訊息與截圖白閃、組字文字。另含 `AppIconView`、`VideoSettingsPopover`（預設檔分段選擇＋影格率／解析度選單＋位元率滑桿）、`LockPasswordSheet`（PIN／密碼或圖形）、`MiniLauncher`、`DragGhost`。
 
 ### MirrorWindowController.swift
-鏡像視窗（主螢幕鏡像與獨立視窗都會記住上次的大小：主螢幕記高度、寬度依手機畫面比例算；視窗透明，只在標題列與右側欄兩塊鋪 `NSVisualEffectView` 毛玻璃，手機畫面區域是黑底、不鋪以省渲染資源）。主螢幕鏡像依畫面比例調整與縮放（保留左側欄空間；直向時視窗最小高度 621（含標題列，`MirrorLayout.portraitMinFrameHeight`，量測使用中的鏡像視窗 357×621），橫向與其他情況用內容最小高度 `MirrorLayout.minContentHeight`）；虛擬顯示器視窗可自由調整，放開邊框時請 `MirrorModel` 重建顯示器。虛擬顯示器視窗會記住上次的大小（frame autosave），重開時先還原大小、再依該大小建立虛擬顯示器（`presetDisplay`），不再被影像大小覆蓋；可指定開啟位置，否則錯開排列；App 名稱載入後更新標題；關閉時停止工作階段。
+鏡像視窗（主螢幕鏡像與獨立視窗都會記住上次的大小：主螢幕記高度、寬度依手機畫面比例算；視窗透明，只在標題列與右側欄兩塊鋪 `NSVisualEffectView` 毛玻璃，手機畫面區域是黑底、不鋪以省渲染資源）。主螢幕鏡像依畫面比例調整與縮放（保留左側欄空間；直向時視窗最小大小 364×636（含標題列，`MirrorLayout.portraitMinFrameWidth／Height`，照使用者截圖量到的鏡像視窗），橫向與其他情況用內容最小高度 `MirrorLayout.minContentHeight`）；虛擬顯示器視窗可自由調整，放開邊框時請 `MirrorModel` 重建顯示器。虛擬顯示器視窗會記住上次的大小（frame autosave），重開時先還原大小、再依該大小建立虛擬顯示器（`presetDisplay`），不再被影像大小覆蓋；可指定開啟位置，否則錯開排列；App 名稱載入後更新標題；關閉時停止工作階段。
 
 ### DropHandler.swift
 拖進來的檔案：`.apk` 安裝；png/jpeg/jpg/heic/heif/mov/mp4 存到 `/sdcard/DCIM/Camera`；資料夾與其他檔案存到 `/sdcard/Download`。
