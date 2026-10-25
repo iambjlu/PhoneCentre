@@ -326,9 +326,9 @@ struct SideColumn: View {
                 NavButton(help: "電源") { model.key(KeyMap.power) } icon: { sfIcon("power") }
             }
             Divider().padding(.horizontal, 10).padding(.vertical, 2).opacity(0.4)
-            recentsButton
-            homeButton
             NavButton(help: "返回（右鍵／Esc）") { model.navBack() } icon: { SamsungNavIcon.Back() }
+            homeButton
+            recentsButton
         }
     }
 

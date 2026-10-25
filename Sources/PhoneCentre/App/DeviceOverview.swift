@@ -95,20 +95,30 @@ struct DeviceOverview: View {
     }
 }
 
-/// 總覽最上面：釘選的 App 與已開啟的 App
+/// 總覽最上面：喜好項目與已開啟的 App，各自獨立一排
 struct PinnedAppsStrip: View {
     let device: Device
     @ObservedObject var catalog: AppCatalog
     @ObservedObject private var settings = AppSettings.shared
 
-    private var packages: [String] {
-        let pins = settings.pinned(for: device)
-        return pins + catalog.running.filter { !pins.contains($0) }
-    }
+    private var pins: [String] { settings.pinned(for: device) }
+    private var openOnly: [String] { catalog.running.filter { !pins.contains($0) } }
 
     var body: some View {
-        Group {
-            if !packages.isEmpty {
+        VStack(alignment: .leading, spacing: 14) {
+            row("喜好項目", pins)
+            row("已開啟", openOnly)
+        }
+        .task(id: device.id) {
+            if catalog.apps.isEmpty { await catalog.reload() }
+            await catalog.refreshTasks()
+        }
+    }
+
+    @ViewBuilder private func row(_ title: String, _ packages: [String]) -> some View {
+        if !packages.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(title).font(.headline).foregroundStyle(.secondary)
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 16) {
                         ForEach(packages, id: \.self) { pkg in
@@ -121,7 +131,7 @@ struct PinnedAppsStrip: View {
                             .contentShape(Rectangle())
                             .onTapGesture { WindowManager.shared.launch(device, package: pkg) }
                             .contextMenu {
-                                Button(settings.isPinned(pkg, on: device) ? "取消釘選" : "釘選到最上面") { settings.togglePin(pkg, on: device) }
+                                Button(settings.isPinned(pkg, on: device) ? "移除喜好項目" : "加入喜好項目") { settings.togglePin(pkg, on: device) }
                                 Button("在獨立視窗開啟") { WindowManager.shared.openApp(device, package: pkg) }
                                 Button("強制停止") { Task { await catalog.forceStop(pkg) } }
                             }
@@ -130,10 +140,6 @@ struct PinnedAppsStrip: View {
                     .padding(.vertical, 4)
                 }
             }
-        }
-        .task(id: device.id) {
-            if catalog.apps.isEmpty { await catalog.reload() }
-            await catalog.refreshTasks()
         }
     }
 }

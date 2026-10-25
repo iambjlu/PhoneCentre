@@ -195,7 +195,7 @@ struct AppRail: View {
             })
         .help(catalog.label(for: pkg))
         .contextMenu {
-            Button(settings.isPinned(pkg, on: catalog.device) ? "從 App 列移除" : "保留在 App 列") {
+            Button(settings.isPinned(pkg, on: catalog.device) ? "移除喜好項目" : "加入喜好項目（App 列）") {
                 settings.togglePin(pkg, on: catalog.device)
             }
             Divider()
