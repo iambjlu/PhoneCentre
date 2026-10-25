@@ -114,7 +114,7 @@ struct PhoneDataView: View {
                 .sorted { ($0.clearedAt ?? $0.firstSeen) > ($1.clearedAt ?? $1.firstSeen) }
             if list.isEmpty { empty(scope == .active ? "目前手機上沒有通知" : "沒有已清除的通知") }
             else {
-                glassList(list) { n in
+                listPanel(list) { n in
                     HStack(alignment: .top, spacing: 10) {
                         AppIconView(catalog: catalog, package: n.package, size: 36)
                         VStack(alignment: .leading, spacing: 3) {
@@ -142,7 +142,7 @@ struct PhoneDataView: View {
             let list = b.calls.filter { matches($0.name, $0.number) }.sorted { $0.date > $1.date }
             if list.isEmpty { empty("沒有通話記錄") }
             else {
-                glassList(list) { c in
+                listPanel(list) { c in
                     HStack {
                         Image(systemName: c.symbol).foregroundStyle(c.isMissed ? .red : .secondary).frame(width: 24)
                         VStack(alignment: .leading) {
@@ -163,20 +163,17 @@ struct PhoneDataView: View {
         }
     }
 
-    /// 每一列是一張液態玻璃卡片
-    private func glassList<T: Identifiable, R: View>(_ items: [T], @ViewBuilder row: @escaping (T) -> R) -> some View {
-        ScrollView {
-            LazyVStack(spacing: 8) {
-                ForEach(items) { item in
-                    row(item)
-                        .padding(12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .glassCard(cornerRadius: 16)
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 12)
+    /// 內容用一般清單（有分隔線），放在比上方玻璃控制列低一層的底板上，才有層級感
+    private func listPanel<T: Identifiable, R: View>(_ items: [T], @ViewBuilder row: @escaping (T) -> R) -> some View {
+        List(items) { item in
+            row(item).padding(.vertical, 4)
         }
+        .listStyle(.inset)
+        .scrollContentBackground(.hidden)
+        .background(.black.opacity(0.18))
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .padding(.horizontal, 12)
+        .padding(.bottom, 12)
     }
 
     private func empty(_ text: String) -> some View {
