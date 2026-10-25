@@ -13,15 +13,28 @@ extension View {
         }
     }
 
-    /// 右側欄：浮在視窗邊緣的圓角液態玻璃面板
-    @ViewBuilder func glassColumn() -> some View {
-        let shape = RoundedRectangle(cornerRadius: 26, style: .continuous)
+    /// 毛玻璃底上疊的液態玻璃面板（App 列、導覽列各一塊）
+    @ViewBuilder func liquidPanel(cornerRadius: CGFloat = 22) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         if #available(macOS 26.0, *) {
             self.clipShape(shape).glassEffect(.regular, in: shape)
         } else {
-            self.clipShape(shape).background(.ultraThinMaterial, in: shape)
+            self.clipShape(shape).background(.thinMaterial, in: shape)
         }
     }
+}
+
+/// 深色毛玻璃底（視窗後面的桌面會透出來）
+struct GlassBackground: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let v = NSVisualEffectView()
+        v.material = .hudWindow
+        v.blendingMode = .behindWindow
+        v.state = .active
+        v.appearance = NSAppearance(named: .vibrantDark)
+        return v
+    }
+    func updateNSView(_ v: NSVisualEffectView, context: Context) {}
 }
 
 // MARK: 狀態指示
@@ -232,20 +245,32 @@ struct SideColumn: View {
     @State private var showLauncher = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            StatusIndicator(status: model.status).padding(.bottom, 6)
-            if model.isAppWindow {
-                Spacer(minLength: 0)
-            } else {
-                AppRail(catalog: catalog) { pkg in model.launch(pkg) }
+        VStack(spacing: 8) {
+            StatusIndicator(status: model.status)
+            glassGroup {
+                VStack(spacing: 8) {
+                    if model.isAppWindow {
+                        Spacer(minLength: 0)
+                    } else {
+                        AppRail(catalog: catalog) { pkg in model.launch(pkg) }
+                            .liquidPanel()
+                    }
+                    navBar.padding(.vertical, 6).liquidPanel()
+                }
             }
-            Divider().padding(.horizontal, 10).opacity(0.4)
-            navBar.padding(.vertical, 6)
         }
-        .environment(\.colorScheme, .dark)
-        .glassColumn()
-        .padding(.vertical, 8)
         .padding(.horizontal, 8)
+        .padding(.bottom, 8)
+        .environment(\.colorScheme, .dark)
+        .background { GlassBackground() }
+    }
+
+    @ViewBuilder private func glassGroup<C: View>(@ViewBuilder _ content: () -> C) -> some View {
+        if #available(macOS 26.0, *) {
+            GlassEffectContainer(spacing: 8) { content() }
+        } else {
+            content()
+        }
     }
 
     private var navBar: some View {

@@ -9,7 +9,7 @@ struct MirrorViewRepresentable: NSViewRepresentable {
 
 enum MirrorLayout {
     /// 右側欄（狀態指示、App 列、導覽列）寬度；視窗上方沒有工具列
-    static let railWidth: CGFloat = 80
+    static let railWidth: CGFloat = 76
     static let toolbarHeight: CGFloat = 0
     static let minContentHeight: CGFloat = 560
 }
