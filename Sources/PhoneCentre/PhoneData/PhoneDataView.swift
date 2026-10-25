@@ -77,8 +77,15 @@ struct PhoneDataView: View {
             .padding(.horizontal, 10).padding(.vertical, 6)
             .background(.quaternary, in: Capsule())
             .frame(width: 240)
-            if store.syncing.contains(CacheManager.key(for: device)) { ProgressView().controlSize(.small) }
-            Button { Task { await store.sync(device) } } label: { Image(systemName: "arrow.clockwise") }
+            Button { Task { await store.sync(device) } } label: {
+                // 更新中就在按鈕原位轉圈，寬度固定，旁邊的搜尋欄不會被擠動
+                ZStack {
+                    Image(systemName: "arrow.clockwise").opacity(syncing ? 0 : 1)
+                    if syncing { ProgressView().controlSize(.small) }
+                }
+                .frame(width: 18, height: 18)
+            }
+            .disabled(syncing)
                 .help("立即更新" + (b.lastSync.map { "（上次更新 " + $0.formatted(date: .omitted, time: .standard) + "）" } ?? ""))
             Menu {
                 Button("停止收集", role: .destructive) { settings.data.phoneDataEnabled = false }
@@ -88,6 +95,8 @@ struct PhoneDataView: View {
         }
         .padding(12)
     }
+
+    private var syncing: Bool { store.syncing.contains(CacheManager.key(for: device)) }
 
     /// 這個分頁對應的保存天數設定（和「設定 → 儲存」同一份）
     private var retentionDays: Binding<Int> {
