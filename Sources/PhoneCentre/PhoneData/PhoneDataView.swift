@@ -6,7 +6,7 @@ enum DataKind: String, CaseIterable, Identifiable {
 }
 
 private enum NotificationScope: String, CaseIterable, Identifiable {
-    case active = "還在手機上", cleared = "已清除（保存期限內）"
+    case active = "還在手機上", cleared = "已清除"
     var id: String { rawValue }
 }
 
@@ -43,12 +43,8 @@ struct PhoneDataView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             let b = store.bundle(for: device)
-            VStack(spacing: 12) {
+            VStack(spacing: 0) {
                 header(b)
-                    .padding(12)
-                    .liquidPanel(cornerRadius: 18)
-                    .padding(.horizontal, 12)
-                    .padding(.top, 8)
                 content(b)
             }
             .task(id: device.id) { await store.sync(device) }
@@ -60,42 +56,37 @@ struct PhoneDataView: View {
 
     // MARK: 標頭
 
+    /// 跟啟動台一樣的單列控制列：左邊篩選，右邊搜尋與動作
     private func header(_ b: PhoneDataBundle) -> some View {
-        VStack(spacing: 8) {
-            HStack {
-                HStack {
-                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                    TextField("搜尋", text: $query).textFieldStyle(.plain)
+        HStack(spacing: 12) {
+            if kind == .notifications {
+                Picker("", selection: $scope) {
+                    ForEach(NotificationScope.allCases) { Text($0.rawValue).tag($0) }
                 }
-                .padding(.horizontal, 10).padding(.vertical, 6)
-                .background(.quaternary, in: Capsule())
-                .frame(width: 240)
-                Spacer()
-                if store.syncing.contains(CacheManager.key(for: device)) { ProgressView().controlSize(.small) }
-                Button { Task { await store.sync(device) } } label: { Label("立即更新", systemImage: "arrow.clockwise") }
-                Menu {
-                    Button("停止收集", role: .destructive) { settings.data.phoneDataEnabled = false }
-                    Button("刪除已保存的資料…", role: .destructive) { confirmDelete = true }
-                } label: { Image(systemName: "ellipsis.circle") }
-                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                .pickerStyle(.segmented).labelsHidden().fixedSize()
+                Toggle("顯示常駐通知", isOn: $showOngoing).toggleStyle(.checkbox)
             }
+            Spacer()
+            PhoneDataRetentionPicker(title: "保存期限", days: retentionDays)
+                .fixedSize()
+                .onChange(of: retentionDays.wrappedValue) { _, _ in store.prune() }
             HStack {
-                if kind == .notifications {
-                    Picker("", selection: $scope) {
-                        ForEach(NotificationScope.allCases) { Text($0.rawValue).tag($0) }
-                    }
-                    .pickerStyle(.segmented).labelsHidden().frame(maxWidth: 320)
-                    Toggle("顯示常駐通知", isOn: $showOngoing).toggleStyle(.checkbox)
-                }
-                Spacer()
-                if let t = b.lastSync {
-                    Text("上次更新 " + t.formatted(date: .omitted, time: .standard)).font(.caption).foregroundStyle(.secondary)
-                }
-                PhoneDataRetentionPicker(title: "保存期限", days: retentionDays)
-                    .fixedSize()
-                    .onChange(of: retentionDays.wrappedValue) { _, _ in store.prune() }
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                TextField("搜尋", text: $query).textFieldStyle(.plain)
             }
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(.quaternary, in: Capsule())
+            .frame(width: 240)
+            if store.syncing.contains(CacheManager.key(for: device)) { ProgressView().controlSize(.small) }
+            Button { Task { await store.sync(device) } } label: { Image(systemName: "arrow.clockwise") }
+                .help("立即更新" + (b.lastSync.map { "（上次更新 " + $0.formatted(date: .omitted, time: .standard) + "）" } ?? ""))
+            Menu {
+                Button("停止收集", role: .destructive) { settings.data.phoneDataEnabled = false }
+                Button("刪除已保存的資料…", role: .destructive) { confirmDelete = true }
+            } label: { Image(systemName: "ellipsis.circle") }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
         }
+        .padding(12)
     }
 
     /// 這個分頁對應的保存天數設定（和「設定 → 儲存」同一份）
