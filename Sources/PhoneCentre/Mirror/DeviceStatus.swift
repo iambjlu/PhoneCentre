@@ -3,11 +3,13 @@ import Foundation
 /// 手機狀態：電池、網路（Wi-Fi 或行動網路世代）、主要 SIM 卡訊號格數
 struct SimInfo: Equatable {
     var slot = 1
-    var carrier = ""
+    var carrier = ""          // SIM 卡的電信業者（gsm.sim.operator.alpha）；沒有才用目前連到的網路
+    var network = ""          // 目前連到的網路名稱（可能和 SIM 業者不同：漫遊，或只能撥緊急電話時借用別家基地台）
     var tech = ""              // 例如「LTE」「5G」
     var dbm: Int?
     var bars = 0
     var inService = false
+    var powerOff = false        // 無線電關閉（飛航模式等）
     var emergencyOnly = false   // 只能撥緊急電話（沒有正常服務）
 }
 
@@ -55,6 +57,7 @@ struct DeviceStatus: Equatable {
     echo '@@net'; dumpsys connectivity | grep -E 'Active default network|NetworkAgentInfo\\{network\\{' | cut -c1-150
     echo '@@tel'; dumpsys telephony.registry | grep -E '^  Phone Id=|^    (mServiceState|mSignalStrength|mDataConnectionState|mCellInfo)=' | cut -c1-2000
     echo '@@sim'; getprop gsm.sim.state
+    echo '@@simop'; getprop gsm.sim.operator.alpha
     echo '@@wifi'; dumpsys wifi | grep -m1 -oE 'RSSI: -?[0-9]+'
     echo '@@wifiinfo'; dumpsys wifi | grep -m1 'mWifiInfo SSID' | cut -c1-200
     echo '@@ip'; ip -f inet addr show wlan0 2>/dev/null | grep -m1 inet
@@ -138,7 +141,15 @@ struct DeviceStatus: Equatable {
             if l.hasPrefix("  Phone Id=") { phones.append([]) }
             else if !phones.isEmpty { phones[phones.count - 1].append(l) }
         }
-        let parsed = phones.map(parsePhone)
+        // 各卡槽 SIM 本身的業者名稱（用逗號分隔，依卡槽順序）
+        let simNames = (sections["simop"]?.first ?? "").split(separator: ",", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+        let parsed = phones.enumerated().map { i, lines -> SimInfo in
+            var p = parsePhone(lines)
+            p.network = p.carrier
+            if i < simNames.count, !simNames[i].isEmpty { p.carrier = simNames[i] }
+            return p
+        }
         // 每個有插卡的卡槽各一筆（雙卡時「總覽」會分開列出）
         s.sims = parsed.enumerated().compactMap { i, p in
             var p = p
@@ -164,6 +175,7 @@ struct DeviceStatus: Equatable {
         if let svc = lines.first(where: { $0.contains("mServiceState=") }) {
             p.inService = svc.contains("mVoiceRegState=0") || svc.contains("mDataRegState=0")
             p.emergencyOnly = svc.contains("mIsEmergencyOnly=true")
+            p.powerOff = svc.contains("mVoiceRegState=3")
             // 「getRilDataRadioTechnology=14(LTE)」→ LTE；NR 顯示 5G
             for key in ["getRilDataRadioTechnology=", "getRilVoiceRadioTechnology="] {
                 guard let r = svc.range(of: key), let o = svc[r.upperBound...].firstIndex(of: "(") else { continue }

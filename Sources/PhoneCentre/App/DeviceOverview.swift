@@ -102,9 +102,12 @@ struct DeviceOverview: View {
     private func simText(_ sim: SimInfo) -> String {
         var parts: [String] = []
         if !sim.carrier.isEmpty { parts.append(sim.carrier) }
+        // 漫遊時連到的網路和 SIM 業者不同，標出來（只能撥緊急電話時另外有註記）
+        if sim.inService, !sim.network.isEmpty, sim.network != sim.carrier { parts.append("（漫遊：\(sim.network)）") }
         if !sim.tech.isEmpty { parts.append(sim.tech) }
         if let d = sim.dbm { parts.append("\(d)dBm") }
         let text = parts.isEmpty ? (sim.inService ? "—" : "沒有服務") : parts.joined(separator: " ")
+        if sim.powerOff { return text + " (行動網路已關閉)" }
         return sim.emergencyOnly && !sim.inService ? text + " (僅限緊急通話)" : text
     }
 
