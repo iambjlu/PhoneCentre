@@ -48,7 +48,7 @@ struct MainView: View {
     private var sidebar: some View {
         List(selection: $selection) {
             Section("裝置") {
-                ForEach(dm.devices.filter { !$0.isRemote }) { d in DeviceRow(device: d).tag(d.id) }
+                ForEach(dm.devices.filter { !$0.isRemote }) { d in deviceRow(d) }
                 ForEach(offlineSaved) { ep in
                     HStack {
                         Image(systemName: "wifi.slash").foregroundStyle(.secondary).frame(width: 22)
@@ -70,7 +70,7 @@ struct MainView: View {
             ForEach(settings.remoteHosts) { h in
                 let ds = dm.devices.filter { $0.endpoint.remoteID == h.id }
                 Section {
-                    ForEach(ds) { d in DeviceRow(device: d).tag(d.id) }
+                    ForEach(ds) { d in deviceRow(d) }
                     if ds.isEmpty {
                         VStack(alignment: .leading, spacing: 6) {
                             Text(remote.status[h.id] ?? "未連線").font(.caption).foregroundStyle(.secondary)
@@ -108,6 +108,11 @@ struct MainView: View {
                     .help("加入無線裝置或遠端 PhoneCentre")
             }
         }
+    }
+
+    private func deviceRow(_ d: Device) -> some View {
+        let on: Bool = selection == d.id
+        return DeviceRow(device: d, isSelected: on).tag(d.id)
     }
 
     private var offlineSaved: [SavedEndpoint] {
@@ -196,9 +201,11 @@ struct MainView: View {
 
 struct DeviceRow: View {
     let device: Device
-    /// 選中時列底色是強調色（increased），圖示與狀態燈要換色才不會和底色糊在一起
+    /// 選中的列底色是強調色，圖示與狀態燈要換色才不會和底色糊在一起。
+    /// 由 MainView 直接告知是否選中（新版側邊欄的選取底色不一定會改變 backgroundProminence）
+    var isSelected = false
     @Environment(\.backgroundProminence) private var prominence
-    private var selected: Bool { prominence == .increased }
+    private var selected: Bool { isSelected || prominence == .increased }
 
     var body: some View {
         HStack {

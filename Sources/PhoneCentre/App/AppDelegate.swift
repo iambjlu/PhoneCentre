@@ -52,6 +52,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                              styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                              backing: .buffered, defer: false)
             w.title = "手機中心"
+            // 太窄時工具列的裝置名稱與副標題會被分頁選擇器擠到被截斷
+            w.minSize = NSSize(width: 1000, height: 560)
             w.isReleasedWhenClosed = false
             // 標準視窗與標準元件：用最新 SDK 連結，系統會自動套用 Liquid Glass（側邊欄、工具列、分頁、按鈕）
             w.isOpaque = false
