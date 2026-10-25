@@ -17,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         CacheManager.shared.start()
         PhoneDataStore.shared.start()
+        LockScreenHelper.startServingUnlockRequests()
         DeviceManager.shared.start()
         RemoteManager.shared.start()
         ShareServer.shared.apply()

@@ -79,6 +79,59 @@ enum LockScreenHelper {
     /// 獨立視窗（虛擬顯示器）的鏡像連線不能操作主螢幕，所以傳 session = nil 改走 adb input。
     @MainActor
     static func unlock(_ device: Device, session: ScrcpySession?) async -> Bool {
+        // 子程序不碰鑰匙圈，也不自己驗證：請主程式（有鑰匙圈權限、做 Touch ID）代辦，只傳「要解鎖哪支手機」，密碼不經過任何通知
+        if ChildMode.isChild { return await requestUnlockFromMain(device) }
+        return await unlockHere(device, session: session)
+    }
+
+    private static let requestName = Notification.Name("com.iambjlu.PhoneCentre.unlockRequest")
+    private static let resultName = Notification.Name("com.iambjlu.PhoneCentre.unlockResult")
+
+    /// 子程序：送出解鎖請求，等主程式回報結果（最久 90 秒，含 Touch ID 等待時間）
+    @MainActor
+    private static func requestUnlockFromMain(_ device: Device) async -> Bool {
+        let id = UUID().uuidString
+        let center = DistributedNotificationCenter.default()
+        return await withCheckedContinuation { cont in
+            var finished = false
+            var token: NSObjectProtocol?
+            func finish(_ ok: Bool) {
+                guard !finished else { return }
+                finished = true
+                if let token { center.removeObserver(token) }
+                cont.resume(returning: ok)
+            }
+            token = center.addObserver(forName: resultName, object: nil, queue: .main) { n in
+                guard n.userInfo?["id"] as? String == id else { return }
+                finish(n.userInfo?["ok"] as? Bool ?? false)
+            }
+            center.postNotificationName(requestName, object: nil, userInfo: [
+                "id": id, "serial": device.serial, "host": device.endpoint.host, "port": device.endpoint.port,
+                "remote": device.endpoint.remoteID?.uuidString ?? "",
+            ], deliverImmediately: true)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 90) { finish(false) }
+        }
+    }
+
+    /// 主程式：接收子程序的解鎖請求
+    @MainActor
+    static func startServingUnlockRequests() {
+        let center = DistributedNotificationCenter.default()
+        center.addObserver(forName: requestName, object: nil, queue: .main) { n in
+            guard let info = n.userInfo, let id = info["id"] as? String, let serial = info["serial"] as? String else { return }
+            let remote = (info["remote"] as? String).flatMap(UUID.init(uuidString:))
+            Task { @MainActor in
+                var ok = false
+                if let d = DeviceManager.shared.devices.first(where: { $0.serial == serial && $0.endpoint.remoteID == remote && $0.isOnline }) {
+                    ok = await unlockHere(d, session: nil)
+                }
+                center.postNotificationName(resultName, object: nil, userInfo: ["id": id, "ok": ok], deliverImmediately: true)
+            }
+        }
+    }
+
+    @MainActor
+    private static func unlockHere(_ device: Device, session: ScrcpySession?) async -> Bool {
         guard await authenticate(reason: "填入「\(device.displayName)」的解鎖密碼"),
               let pw = AppSettings.shared.secret(secretKey(device)) else { return false }
         let c = device.client

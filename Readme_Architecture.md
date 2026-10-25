@@ -197,6 +197,7 @@ Mac 虛擬 keyCode（與鍵盤配置、輸入法無關）→ Android keycode；�
 
 ### LockScreenHelper.swift
 以 `dumpsys window`／`dumpsys activity activities` 的 keyguard 欄位判斷是否在鎖定畫面；解鎖密碼存在鑰匙圈（鍵 `lock.<裝置鍵>`）；`unlock` 先以 Touch ID（或 Mac 密碼）驗證，再喚醒、上滑、輸入密碼（或畫圖形）、Enter；獨立視窗不用鏡像連線而走 adb `input`。
+Dock 獨立視窗的子程序（簽章身分不同的副本）完全不碰鑰匙圈（`Keychain` 在子程序一律回傳 nil），否則每個副本都會各自跳出「想使用鑰匙圈中的機密資訊」。需要解鎖時，子程序用 `DistributedNotificationCenter` 送出「要解鎖哪支手機」的請求（只含序號與端點，不含密碼），由主程式驗證 Touch ID、讀鑰匙圈、用 adb 解鎖後回報結果；主程式沒開就解鎖不了（約 90 秒後逾時）。
 
 ## Sources/PhoneCentre/Files
 

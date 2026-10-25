@@ -125,7 +125,8 @@ struct MirrorContentView: View {
     }
 
     @ViewBuilder private var unlockButton: some View {
-        if LockScreenHelper.hasPassword(model.device) {
+        // 子程序（Dock 獨立視窗）不碰鑰匙圈，解鎖交給主程式處理，所以一律顯示 Touch ID 按鈕
+        if ChildMode.isChild || LockScreenHelper.hasPassword(model.device) {
             Button { model.unlock() } label: { Label("用 Touch ID 解鎖", systemImage: "touchid") }
                 .buttonStyle(.borderedProminent)
         } else {
