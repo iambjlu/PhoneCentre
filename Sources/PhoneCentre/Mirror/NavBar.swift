@@ -75,24 +75,24 @@ struct StatusIndicator: View {
                     ctx.stroke(arc(seg.0, seg.0 + len), with: .color(ringColor), style: style)
                     remain -= len
                 }
+                // 訊號格：畫在同一個圓上，大小一致；彼此與兩端離電池環的角度都相同（22°）
+                if status.hasSim {
+                    for i in 0..<4 {
+                        let a = Angle.degrees(90 + (1.5 - Double(i)) * 22).radians
+                        let d: CGFloat = 3.6
+                        let pt = CGPoint(x: c.x + r * CGFloat(cos(a)), y: c.y + r * CGFloat(sin(a)))
+                        ctx.fill(Path(ellipseIn: CGRect(x: pt.x - d / 2, y: pt.y - d / 2, width: d, height: d)),
+                                 with: .color(.white.opacity(i < status.signalBars ? 1 : 0.28)))
+                    }
+                }
             }
             if status.batteryLevel >= 0 {
                 Text("\(status.batteryLevel)")
                     .font(.system(size: 12, weight: .bold, design: .rounded)).monospacedDigit()
                     .foregroundStyle(status.charging ? Color.green : Color.white)
-                    .offset(y: -size / 2 - 1)
+                    .offset(y: -(size / 2 - 2) + 0.8)   // 壓在環的正中間（數字視覺中心略高於文字框中心）
             }
             center.offset(y: -size * 0.02)
-            if status.hasSim {
-                // 訊號格：排在電池環下方缺口的同一個圓上，彼此與兩端離電池環的角度都相同（22°）
-                let r = size / 2 - 2
-                ForEach(0..<4, id: \.self) { i in
-                    let a = Angle.degrees(90 + (1.5 - Double(i)) * 22).radians
-                    Circle().fill(Color.white.opacity(i < status.signalBars ? 1 : 0.28))
-                        .frame(width: 3.6, height: 3.6)
-                        .offset(x: r * CGFloat(cos(a)), y: r * CGFloat(sin(a)))
-                }
-            }
         }
         .frame(width: size, height: size)
         .padding(.top, 22)
