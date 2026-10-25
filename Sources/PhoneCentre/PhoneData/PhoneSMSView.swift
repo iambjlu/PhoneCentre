@@ -108,9 +108,10 @@ struct PhoneSMSView: View {
             if m.isSent { Spacer(minLength: 70) }
             Text(m.body)
                 .textSelection(.enabled)
+                .fontWeight(m.isSent ? .medium : .regular)
                 .foregroundStyle(m.isSent ? .white : .primary)
                 .padding(.horizontal, 13).padding(.vertical, 8)
-                .background(m.isSent ? Color.green : Color.secondary.opacity(0.25),
+                .background(m.isSent ? Color(red: 0.20, green: 0.62, blue: 0.32) : Color.secondary.opacity(0.25),
                             in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             if !m.isSent { Spacer(minLength: 70) }
         }
