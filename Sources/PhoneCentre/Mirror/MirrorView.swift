@@ -119,12 +119,16 @@ final class MirrorView: NSView, NSTextInputClient {
     }
 
     // 右鍵 = 返回（螢幕關閉時則點亮）
-    override func rightMouseDown(with e: NSEvent) { session?.send(.backOrScreenOn(.down)) }
-    override func rightMouseUp(with e: NSEvent) { session?.send(.backOrScreenOn(.up)) }
+    override func rightMouseDown(with e: NSEvent) {
+        if let onBack { onBack() } else { session?.send(.backOrScreenOn(.down)) }
+    }
+    override func rightMouseUp(with e: NSEvent) {
+        if onBack == nil { session?.send(.backOrScreenOn(.up)) }
+    }
 
     // 中鍵 = 主畫面
-    override func otherMouseDown(with e: NSEvent) { sendKey(KeyMap.home, .down) }
-    override func otherMouseUp(with e: NSEvent) { sendKey(KeyMap.home, .up) }
+    override func otherMouseDown(with e: NSEvent) { if let onHome { onHome() } else { sendKey(KeyMap.home, .down) } }
+    override func otherMouseUp(with e: NSEvent) { if onHome == nil { sendKey(KeyMap.home, .up) } }
 
     // MARK: 捲動
 
@@ -206,6 +210,10 @@ final class MirrorView: NSView, NSTextInputClient {
 
     // MARK: 鍵盤
 
+    /// 虛擬顯示器的視窗：返回／主畫面要作用在該顯示器上，由 MirrorModel 接手（nil = 直接送 scrcpy）
+    var onBack: (() -> Void)?
+    var onHome: (() -> Void)?
+
     func sendKey(_ code: Int32, _ action: ControlMessage.KeyAction, meta: Int32 = 0, repeat rep: Int32 = 0) {
         session?.send(.keycode(action: action, keycode: code, repeat: rep, meta: meta))
     }
@@ -244,7 +252,7 @@ final class MirrorView: NSView, NSTextInputClient {
             tapKey(54, meta: e.modifierFlags.contains(.shift) ? ctrl | 0x41 : ctrl); return true
         case 0x7B: tapKey(KeyMap.moveHome, meta: KeyMap.meta(e.modifierFlags)); return true
         case 0x7C: tapKey(KeyMap.moveEnd, meta: KeyMap.meta(e.modifierFlags)); return true
-        case 0x33: tapKey(KeyMap.home); return true       // ⌘⌫ = 主畫面
+        case 0x33: if let onHome { onHome() } else { tapKey(KeyMap.home) }; return true       // ⌘⌫ = 主畫面
         default: return false   // 交給選單（⌘W 等）
         }
     }

@@ -140,7 +140,7 @@ Mac 虛擬 keyCode（與鍵盤配置、輸入法無關）→ Android keycode；�
 
 ### MirrorView.swift
 顯示畫面並轉送輸入的 `NSView`。
-- 滑鼠左鍵 = 觸控；右鍵 = 返回（螢幕關閉時點亮）；中鍵 = 主畫面。
+- 滑鼠左鍵 = 觸控；右鍵 = 返回（螢幕關閉時點亮）；中鍵 = 主畫面。虛擬顯示器視窗的右鍵／中鍵／⌘⌫ 由 `onBack`／`onHome` 交給 `MirrorModel`，作用在該視窗的顯示器上。
 - 觸控板捲動：模擬單指拖曳（移動超過門檻才放下手指，忽略慣性階段，由 Android 自己算慣性）；一般滑鼠滾輪送捲動事件。
 - 觸控板雙指縮放：以指標位置為中心、斜向擺放兩個虛擬手指。
 - 鍵盤：實體按鍵模式不經過輸入法（`inputContext` 回傳 nil），依按鍵位置送 keycode；Mac 輸入法模式實作 `NSTextInputClient`，ASCII 用 INJECT_TEXT，中文等非 ASCII 用設定剪貼簿並貼上，組字中的文字顯示在畫面下方。
@@ -151,15 +151,26 @@ Mac 虛擬 keyCode（與鍵盤配置、輸入法無關）→ Android keycode；�
 一個鏡像視窗的狀態與工作階段管理。
 - 啟動／重啟 session；重啟時先拔掉舊 session 的回呼（避免晚到的「已停止」被當成新連線中斷），並延遲 0.6 秒等舊 server 釋放硬體編碼器。
 - 自動維持連線：連線中斷且裝置回來就重連。
+- 虛擬顯示器 id：連線後以 `dumpsys display` 找名為 scrcpy、大小相符且尚未被其他視窗認領的顯示器（`claimedDisplays`），用於 `input -d`、`screencap -d`、搬移 App。
+- 調整視窗大小：先保留舊 session，用新大小另開 session（不帶 startApp），新顯示器就緒後以 `am display move-stack` 把舊顯示器的 root task 搬過去，再關舊 session，App 不會經過主螢幕；搬移失敗才退回重新啟動 App。
+- 關閉虛擬顯示器視窗（`MirrorWindowController.windowShouldClose`）：`sendAppsToBackground` 先把 App 搬到主螢幕，立刻 `am start --activity-reorder-to-front` 把主螢幕原本最上層的 Activity 拉回來，App 留在背景。
+- 獨立視窗每 2 秒檢查顯示器上是否還有 root task（解析 `taskId=… rootTaskId=…` 行；連續兩次沒有才算），沒有就 `appClosed`，視窗顯示「XXX 已關閉」與「打開」按鈕。
+- 導覽動作：主螢幕鏡像走 scrcpy 按鍵；虛擬顯示器上返回用 `input -d <id> keyevent`，主畫面（單一 App 視窗）改成重新啟動該 App 的首頁，多工改為選單切換同一視窗的 App，截圖用 `screencap -d`，旋轉改為視窗寬高對調並重建顯示器。旋轉選單（主螢幕）另可鎖定直向／橫向／自動旋轉（`settings put system`）。
 - 虛擬顯示器大小：像素 = 視窗點數 × Mac 螢幕的 backing scale（非 Retina 就是 1:1），密度 160 × scale，讓 1 個 Mac 點約等於 1 個 Android dp；長寬取 8 的倍數（無條件捨去，不超過視窗）；受「最大解析度」限制。放開視窗邊框時依新大小重建虛擬顯示器（`resizeVirtualDisplay`）。
 - 定時工作：Mac 剪貼簿 → 手機（0.7 秒）；主鏡像與桌面模式每 3 秒更新 App 列；主鏡像視窗在前景時偵測鎖定畫面。
 - 操作：按鍵、黑屏切換、Mac 端靜音、啟動 App、截圖存到桌面、套用畫質（重啟）、拖放處理、Touch ID 解鎖。
 
+### DeviceStatus.swift
+手機狀態：一次 shell 取得 `dumpsys battery`（電量、是否接電）、`dumpsys connectivity`（預設網路是 Wi-Fi 還是 MOBILE[LTE] → 4G/5G）、`dumpsys telephony.registry`（有資料連線的那張 SIM，否則第一張；訊號 level 0–4、是否有服務）、`gsm.sim.state`。`MirrorModel` 每 5 秒更新。
+
+### NavBar.swift
+左側欄 `SideColumn`：上方 `StatusIndicator`（外環＝電池，缺口在下的 270° 圓環；充電為綠色，≤20% 為紅色；環上方是閃電＋百分比；中間 Wi-Fi 或 4G/5G；訊號格是沿外環圓弧排在缺口裡的 4 個點），中間 App 列（獨立視窗沒有），下方導覽列。導覽列由上到下：畫質設定、輸入方式（選單）、桌面模式的啟動台、虛擬定位（尚未提供）、聲音（選單：音量＋／−、Mac 端靜音）、截圖、旋轉（選單）、黑屏與電源（只有主螢幕）、多工、主畫面、返回。按鍵一律是 SF Symbols；多工「|||」、主畫面（圓角方形）、返回「<」是仿 One UI 的自繪圖示（`SamsungNavIcon`）。
+
 ### MirrorContentView.swift
-鏡像視窗內容：左側 `AppRail`（主鏡像與桌面模式；已開啟的 App 左邊有點，最近使用的沒有；可把圖示拖出 App 列放開，就在放開位置以獨立視窗開啟，拖曳時由 `DragGhost` 顯示跟著游標的圖示）、上方工具列（電源、音量、旋轉、返回、主畫面、最近使用、通知欄、截圖、黑屏、靜音、鍵盤模式、畫質設定；桌面模式另有小型啟動台）、解鎖橫幅、組字文字、提示訊息（桌面模式還沒開 App 時提示從 App 列或啟動台開啟）。另含 `AppIconView`、`VideoSettingsPopover`、`LockPasswordSheet`、`MiniLauncher`、`DragGhost`。
+鏡像視窗內容：左側 `SideColumn`（寬度 `MirrorLayout.railWidth`，不透明底色，沒有上方工具列）內含 `AppRail`（主鏡像與桌面模式；已開啟的 App 左邊有點，最近使用的沒有；可把圖示往左或往右拖出 App 列超過距離後放開，就在放開位置以獨立視窗開啟，拖曳時由 `DragGhost` 顯示跟著游標的圖示）、解鎖橫幅、App 已關閉提示、組字文字、提示訊息（桌面模式還沒開 App 時提示從 App 列或啟動台開啟）。另含 `AppIconView`、`VideoSettingsPopover`（預設檔分段選擇＋影格率／解析度選單＋位元率滑桿）、`LockPasswordSheet`、`MiniLauncher`、`DragGhost`。
 
 ### MirrorWindowController.swift
-鏡像視窗。主螢幕鏡像依畫面比例調整與縮放（保留 App 列與工具列空間）；虛擬顯示器視窗可自由調整，放開邊框時請 `MirrorModel` 重建顯示器。可指定開啟位置，否則錯開排列；App 名稱載入後更新標題；關閉時停止工作階段。
+鏡像視窗。主螢幕鏡像依畫面比例調整與縮放（保留左側欄空間，內容最小高度 `MirrorLayout.minContentHeight`）；虛擬顯示器視窗可自由調整，放開邊框時請 `MirrorModel` 重建顯示器。可指定開啟位置，否則錯開排列；App 名稱載入後更新標題；關閉時停止工作階段。
 
 ### DropHandler.swift
 拖進來的檔案：`.apk` 安裝；png/jpeg/jpg/heic/heif/mov/mp4 存到 `/sdcard/DCIM/Camera`；資料夾與其他檔案存到 `/sdcard/Download`。

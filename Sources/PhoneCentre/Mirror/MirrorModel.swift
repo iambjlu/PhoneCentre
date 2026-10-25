@@ -26,6 +26,19 @@ final class MirrorModel: ObservableObject {
     @Published var frameSize: CGSize = .zero
     /// 桌面模式還沒開過任何 App
     @Published var desktopEmpty = true
+    @Published var status = DeviceStatus()
+    /// 獨立視窗的 App 在手機上被關掉了（例如在主螢幕滑掉）
+    @Published var appClosed = false
+    private var appSeen = false
+    private var emptyChecks = 0
+    /// 這個視窗的虛擬顯示器 id（主螢幕鏡像為 nil）
+    private(set) var displayId: Int?
+    /// 已被某個鏡像視窗認領的虛擬顯示器，避免多個視窗大小相同時認錯
+    private static var claimedDisplays = Set<Int>()
+    /// 調整大小時，舊的 session 先留著，等 App 搬到新顯示器才關閉
+    private var retiring: (session: ScrcpySession, display: Int?)?
+    /// 虛擬顯示器旋轉（寬高對調）時由視窗控制器實作
+    var onRotateWindow: (() -> Void)?
 
     let view = MirrorView()
     let catalog: AppCatalog
@@ -58,14 +71,19 @@ final class MirrorModel: ObservableObject {
         view.keyboardMode = keyboardMode
         view.onMarkedText = { [weak self] in self?.markedText = $0 }
         view.onDropFiles = { [weak self] urls in self?.drop(urls) }
+        if isVirtualDisplay {
+            view.onBack = { [weak self] in self?.navBack() }
+            view.onHome = { [weak self] in self?.navHome() }
+        }
     }
 
     // MARK: 連線
 
-    func start() {
+    /// handover = true：調整虛擬顯示器大小，舊 session 繼續撐著，新顯示器好了再把 App 搬過去
+    func start(handover: Bool = false) {
         userStopped = false
         retryTask?.cancel()
-        statusText = "連線中…"
+        if !handover { statusText = "連線中…" }
         let s = AppSettings.shared
         var cfg = MirrorConfig()
         cfg.video = videoOptions
@@ -77,10 +95,18 @@ final class MirrorModel: ObservableObject {
         if isVirtualDisplay {
             cfg.newDisplay = virtualDisplaySpec()
             cfg.systemDecorations = desktopMode
-            cfg.startApp = appPackage
+            cfg.startApp = handover ? nil : appPackage
         }
         // 舊的 session 先拔掉回呼，避免它晚到的「已停止」事件被當成新連線中斷
-        let hadOld = detachCurrentSession()
+        let hadOld: Bool
+        if handover, let old = session {
+            old.onState = nil; old.onFrameSize = nil; old.onSample = nil; old.onDeviceClipboard = nil
+            retiring = (old, displayId)
+            session = nil
+            hadOld = false
+        } else {
+            hadOld = detachCurrentSession()
+        }
         let session = ScrcpySession(device: device, config: cfg)
         session.onState = { [weak self, weak session] st in
             guard let self, let session, self.session === session else { return }
@@ -167,14 +193,104 @@ final class MirrorModel: ObservableObject {
         let current = customDisplay?.px ?? frameSize
         if abs(current.width - spec.px.width) < 16, abs(current.height - spec.px.height) < 16 { return }
         customDisplay = spec
-        statusText = "調整大小中…"
-        start()
+        if displayId != nil, session?.state == .running {
+            start(handover: true)
+        } else {
+            statusText = "調整大小中…"
+            start()
+        }
+    }
+
+    /// 虛擬顯示器旋轉：寬高對調
+    func rotateVirtualDisplay() { onRotateWindow?() }
+
+    // MARK: 虛擬顯示器
+
+    /// 連線完成後找出自己的虛擬顯示器；調整大小的話就把 App 從舊顯示器搬過來再關掉舊的
+    private func finishConnect() async {
+        let old = retiring
+        let mine = await locateDisplay()
+        if let old, let d = old.display { Self.claimedDisplays.remove(d) }
+        if let mine { Self.claimedDisplays.insert(mine) }
+        displayId = mine
+        guard let old else { return }
+        retiring = nil
+        if let from = old.display, let to = mine {
+            for task in await rootTasks(onDisplay: from) {
+                _ = try? await device.client.shell("am display move-stack \(task) \(to)")
+            }
+        } else if let app = appPackage {
+            session?.send(.startApp(app))
+        }
+        try? await Task.sleep(nanoseconds: 400_000_000)
+        old.session.stop()
+    }
+
+    /// 關閉虛擬顯示器視窗前：把顯示器上的 App 搬到主螢幕後立刻把主螢幕原本的畫面拉回最上層，
+    /// App 就留在背景，不會突然跳到主螢幕上。
+    func sendAppsToBackground() async {
+        guard isVirtualDisplay, let d = displayId else { return }
+        let tasks = await rootTasks(onDisplay: d)
+        guard !tasks.isEmpty else { return }
+        let out = (try? await device.client.shell("dumpsys activity activities | grep -E 'Display #|mResumedActivity'")) ?? ""
+        var inMain = false
+        var prev: String?
+        for line in out.split(separator: "\n") {
+            if line.contains("Display #") { inMain = line.contains("Display #0 "); continue }
+            if inMain, prev == nil, let r = line.range(of: " u0 ") {
+                prev = line[r.upperBound...].prefix { $0 != " " && $0 != "}" }.description
+            }
+        }
+        var script = tasks.map { "am display move-stack \($0) 0" }.joined(separator: "; ")
+        if let prev, !prev.isEmpty { script += "; am start -n \(prev) --activity-reorder-to-front" }
+        _ = try? await device.client.shell(script, timeout: 10)
+    }
+
+    /// 依大小與認領狀態找出這個視窗的虛擬顯示器（取 id 最大 = 最新建立的）
+    private func locateDisplay() async -> Int? {
+        let want = frameSize
+        let out = (try? await device.client.shell("dumpsys display | grep 'mBaseDisplayInfo=DisplayInfo{\"scrcpy\"' | cut -c1-260")) ?? ""
+        var best: Int?
+        for line in out.split(separator: "\n") {
+            guard let id = Self.firstInt(in: line, after: "displayId "), !Self.claimedDisplays.contains(id) || (id == displayId && retiring == nil),
+                  let r = line.range(of: "real "),
+                  let w = Self.firstInt(in: line[r.upperBound...], after: ""),
+                  let hr = line.range(of: " x ", range: r.upperBound..<line.endIndex),
+                  let h = Self.firstInt(in: line[hr.upperBound...], after: "") else { continue }
+            if want == .zero || (abs(CGFloat(w) - want.width) < 2 && abs(CGFloat(h) - want.height) < 2) {
+                best = max(best ?? 0, id)
+            }
+        }
+        return best
+    }
+
+    private static func firstInt(in s: Substring, after marker: String) -> Int? {
+        var rest = s
+        if !marker.isEmpty { guard let r = s.range(of: marker) else { return nil }; rest = s[r.upperBound...] }
+        return Int(rest.prefix { $0.isNumber })
+    }
+
+    /// 某個顯示器上的 root task id
+    private func rootTasks(onDisplay id: Int) async -> [Int] {
+        let out = (try? await device.client.shell("dumpsys activity activities | grep -E 'Display #|rootTaskId='", timeout: 15)) ?? ""
+        var inDisplay = false
+        var tasks: [Int] = []
+        for line in out.split(separator: "\n") {
+            if line.contains("Display #") { inDisplay = line.contains("Display #\(id) ") ; continue }
+            if inDisplay, line.trimmingCharacters(in: .whitespaces).hasPrefix("taskId="),
+               let r = line.range(of: "rootTaskId="), let t = Int(line[r.upperBound...].prefix { $0.isNumber }), !tasks.contains(t) {
+                tasks.append(t)
+            }
+        }
+        return tasks
     }
 
     private func handle(_ st: ScrcpySession.State) {
         switch st {
-        case .starting: statusText = "連線中…"
-        case .running: statusText = nil
+        case .starting: if retiring == nil { statusText = "連線中…" }
+        case .running:
+            statusText = nil
+            if isVirtualDisplay { Task { await finishConnect() } }
         case .failed(let msg):
             statusText = "連線中斷：\(msg)"
             scheduleRetry()
@@ -229,6 +345,8 @@ final class MirrorModel: ObservableObject {
         retryTask?.cancel()
         timers.forEach { $0.invalidate() }
         timers = []
+        if let r = retiring { r.session.stop(); retiring = nil }
+        if let d = displayId { Self.claimedDisplays.remove(d); displayId = nil }
         detachCurrentSession()
     }
 
@@ -240,6 +358,15 @@ final class MirrorModel: ObservableObject {
         timers.append(Timer.scheduledTimer(withTimeInterval: 0.7, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.syncMacClipboard() }
         })
+        timers.append(Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+            Task { @MainActor in await self?.refreshStatus() }
+        })
+        Task { await refreshStatus() }
+        if isAppWindow {
+            timers.append(Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+                Task { @MainActor in await self?.checkAppAlive() }
+            })
+        }
         // 主鏡像與桌面模式都有左側 App 列，需要定時更新
         if !isAppWindow {
             timers.append(Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
@@ -255,6 +382,27 @@ final class MirrorModel: ObservableObject {
         guard pb.changeCount != lastPasteboardCount else { return }
         lastPasteboardCount = pb.changeCount
         if let s = pb.string(forType: .string) { session.setClipboard(s, paste: false) }
+    }
+
+    /// 虛擬顯示器上已經沒有任何 task：App 被關掉了。連續兩次都沒有才算，避免啟動中的空檔誤判
+    private func checkAppAlive() async {
+        guard retiring == nil, session?.state == .running, let d = displayId else { return }
+        let empty = await rootTasks(onDisplay: d).isEmpty
+        if !empty { appSeen = true; emptyChecks = 0; if appClosed { appClosed = false }; return }
+        emptyChecks += 1
+        if appSeen, emptyChecks >= 2, !appClosed { appClosed = true }
+    }
+
+    func reopenApp() {
+        guard let app = appPackage else { return }
+        appClosed = false
+        appSeen = false
+        emptyChecks = 0
+        session?.send(.startApp(app))
+    }
+
+    private func refreshStatus() async {
+        if let s = await DeviceStatus.fetch(device.client), s != status { status = s }
     }
 
     private func pollStatus() async {
@@ -286,6 +434,38 @@ final class MirrorModel: ObservableObject {
 
     func key(_ code: Int32) { view.tapKey(code) }
 
+    func showToast(_ text: String) { toast = text; clearToastLater() }
+
+    /// 返回：虛擬顯示器上要指定顯示器，不然會作用在主螢幕
+    func navBack() {
+        if isVirtualDisplay, let d = displayId { inputKey(KeyMap.back, display: d) } else { key(KeyMap.back) }
+    }
+
+    /// 主畫面：主螢幕鏡像是 Home；虛擬顯示器沒有桌面，單一 App 視窗改成回到 App 首頁，桌面模式送 Home 到該顯示器
+    func navHome() {
+        guard isVirtualDisplay else { key(KeyMap.home); return }
+        if let app = appPackage { session?.send(.startApp(app)) }
+        else if let d = displayId { inputKey(KeyMap.home, display: d) }
+    }
+
+    private func inputKey(_ code: Int32, display: Int) {
+        let c = device.client
+        Task { _ = try? await c.shell("input -d \(display) keyevent \(code)") }
+    }
+
+    enum RotationLock { case portrait, landscape, auto }
+
+    func setRotation(_ r: RotationLock) {
+        let cmd: String
+        switch r {
+        case .portrait: cmd = "settings put system accelerometer_rotation 0; settings put system user_rotation 0"
+        case .landscape: cmd = "settings put system accelerometer_rotation 0; settings put system user_rotation 1"
+        case .auto: cmd = "settings put system accelerometer_rotation 1"
+        }
+        let c = device.client
+        Task { _ = try? await c.shell(cmd) }
+    }
+
     func toggleScreenOff() {
         screenOff.toggle()
         session?.send(.setDisplayPower(!screenOff))
@@ -303,7 +483,8 @@ final class MirrorModel: ObservableObject {
 
     func screenshot() {
         Task {
-            guard let data = try? await device.client.exec("screencap -p", timeout: 20), !data.isEmpty else {
+            let target = isVirtualDisplay ? displayId.map { " -d \($0)" } ?? "" : ""
+            guard let data = try? await device.client.exec("screencap\(target) -p", timeout: 20), !data.isEmpty else {
                 toast = "截圖失敗"; clearToastLater(); return
             }
             let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HH.mm.ss"

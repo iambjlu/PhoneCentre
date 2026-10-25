@@ -12,8 +12,8 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
     /// 使用者自己調整過大小後，不再依影像大小改視窗
     private var userResized = false
 
-    private var chromeWidth: CGFloat { model.isAppWindow ? 0 : MirrorLayout.railWidth + 1 }
-    private var chromeHeight: CGFloat { MirrorLayout.toolbarHeight + 1 }
+    private var chromeWidth: CGFloat { MirrorLayout.railWidth + 1 }
+    private var chromeHeight: CGFloat { MirrorLayout.toolbarHeight }
 
     @MainActor
     init(model: MirrorModel, topLeft: NSPoint? = nil) {
@@ -25,7 +25,7 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.contentView = NSHostingView(rootView: MirrorContentView(model: model))
         window.tabbingMode = .disallowed
-        window.contentMinSize = NSSize(width: 240, height: 240)
+        window.contentMinSize = NSSize(width: 240 + MirrorLayout.railWidth, height: MirrorLayout.minContentHeight)
         window.setFrameAutosaveName("Mirror.\(model.device.id).\(model.appPackage ?? (model.desktopMode ? "desktop" : "main"))")
         if let topLeft {
             window.setFrameTopLeftPoint(topLeft)
@@ -40,6 +40,7 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
         super.init(window: window)
         window.delegate = self
         model.onFrameSize = { [weak self] size in self?.fit(to: size) }
+        model.onRotateWindow = { [weak self] in self?.rotateWindow() }
         // App 名稱載入後更新標題
         model.catalog.$apps
             .receive(on: DispatchQueue.main)
@@ -103,6 +104,22 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
         return sender.frameRect(forContentRect: NSRect(origin: .zero, size: fixed)).size
     }
 
+    /// 虛擬顯示器旋轉：視窗寬高對調，再依新的大小重建顯示器
+    @MainActor
+    private func rotateWindow() {
+        guard let window else { return }
+        let c = window.contentLayoutRect.size
+        let video = CGSize(width: c.width - chromeWidth, height: c.height - chromeHeight)
+        let content = NSSize(width: video.height + chromeWidth, height: video.width + chromeHeight)
+        var frame = window.frameRect(forContentRect: NSRect(origin: .zero, size: content))
+        frame.origin = NSPoint(x: window.frame.minX, y: window.frame.maxY - frame.height)
+        window.setFrame(frame, display: true, animate: true)
+        userResized = true
+        model.backingScale = window.backingScaleFactor
+        let n = window.contentLayoutRect.size
+        model.resizeVirtualDisplay(toPoints: CGSize(width: n.width - chromeWidth, height: n.height - chromeHeight))
+    }
+
     /// 放開邊框：依新的視窗大小重建虛擬顯示器
     func windowDidEndLiveResize(_ notification: Notification) {
         MainActor.assumeIsolated {
@@ -112,6 +129,19 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
             let c = window.contentLayoutRect.size
             model.resizeVirtualDisplay(toPoints: CGSize(width: c.width - chromeWidth, height: c.height - chromeHeight))
         }
+    }
+
+    private var cleanedUp = false
+
+    /// 虛擬顯示器視窗關閉前，先讓 App 回到背景再真正關閉
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        if cleanedUp || !model.isVirtualDisplay { return true }
+        Task { @MainActor in
+            await model.sendAppsToBackground()
+            cleanedUp = true
+            sender.close()
+        }
+        return false
     }
 
     func windowWillClose(_ notification: Notification) {

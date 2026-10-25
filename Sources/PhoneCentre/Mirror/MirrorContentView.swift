@@ -8,17 +8,18 @@ struct MirrorViewRepresentable: NSViewRepresentable {
 }
 
 enum MirrorLayout {
-    static let toolbarHeight: CGFloat = 38
+    /// 左側欄（狀態指示、App 列、導覽列）寬度；視窗上方沒有工具列
     static let railWidth: CGFloat = 64
+    static let toolbarHeight: CGFloat = 0
+    static let minContentHeight: CGFloat = 560
 }
 
-/// 鏡像視窗內容：左側 App 列 + 上方工具列 + 手機畫面
+/// 鏡像視窗內容：左側欄（狀態指示 + App 列 + 導覽列）＋ 手機畫面
 struct MirrorContentView: View {
     @ObservedObject var model: MirrorModel
     @ObservedObject var catalog: AppCatalog
     @State private var showVideoSettings = false
     @State private var showPasswordSheet = false
-    @State private var showLauncher = false
 
     init(model: MirrorModel) {
         self.model = model
@@ -27,75 +28,18 @@ struct MirrorContentView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            if !model.isAppWindow {
-                AppRail(catalog: catalog) { pkg in model.launch(pkg) }
-                    .frame(width: MirrorLayout.railWidth)
-                Divider()
-            }
-            VStack(spacing: 0) {
-                toolbar
-                    .frame(height: MirrorLayout.toolbarHeight)
-                Divider()
-                ZStack {
-                    MirrorViewRepresentable(view: model.view)
-                    overlays
-                }
+            SideColumn(model: model, catalog: catalog, showVideoSettings: $showVideoSettings)
+                .frame(width: MirrorLayout.railWidth)
+            Divider()
+            ZStack {
+                MirrorViewRepresentable(view: model.view)
+                overlays
             }
         }
         .background(Color.black)
         .sheet(isPresented: $showPasswordSheet) {
             LockPasswordSheet(device: model.device)
         }
-    }
-
-    // MARK: 工具列
-
-    private var toolbar: some View {
-        HStack(spacing: 2) {
-            ToolButton("power", "電源") { model.key(KeyMap.power) }
-            ToolButton("speaker.wave.3", "音量 +") { model.key(KeyMap.volumeUp) }
-            ToolButton("speaker.wave.1", "音量 −") { model.key(KeyMap.volumeDown) }
-            Divider().frame(height: 18)
-            ToolButton("rotate.right", "旋轉") { model.session?.send(.rotateDevice) }
-            ToolButton("chevron.backward", "返回（右鍵／Esc）") { model.key(KeyMap.back) }
-            ToolButton("circle", "主畫面（中鍵）") { model.key(KeyMap.home) }
-            ToolButton("square.on.square", "最近使用") { model.key(KeyMap.appSwitch) }
-            ToolButton("bell", "通知欄") { model.session?.send(.expandNotifications) }
-            Divider().frame(height: 18)
-            ToolButton("camera", "截圖存到桌面") { model.screenshot() }
-            if model.desktopMode {
-                ToolButton("square.grid.3x3", "在這個桌面開啟 App") { showLauncher.toggle() }
-                    .popover(isPresented: $showLauncher) {
-                        MiniLauncher(catalog: catalog) { pkg in showLauncher = false; model.launch(pkg) }
-                    }
-            }
-            if !model.isVirtualDisplay {
-                ToolButton(model.screenOff ? "iphone.slash" : "iphone", model.screenOff ? "點亮手機螢幕" : "讓手機黑屏（繼續鏡像）") {
-                    model.toggleScreenOff()
-                }
-                if AppSettings.shared.audioEnabled {
-                    ToolButton(model.muted ? "speaker.slash" : "speaker", model.muted ? "取消靜音" : "Mac 端靜音") { model.toggleMute() }
-                }
-            }
-            Spacer(minLength: 4)
-            Menu {
-                Picker("鍵盤", selection: $model.keyboardMode) {
-                    ForEach(KeyboardMode.allCases) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.inline)
-            } label: {
-                Image(systemName: model.keyboardMode == .physical ? "keyboard" : "character.cursor.ibeam")
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .help("鍵盤輸入模式：\(model.keyboardMode.title)")
-            ToolButton("slider.horizontal.3", "畫質設定") { showVideoSettings.toggle() }
-                .popover(isPresented: $showVideoSettings) {
-                    VideoSettingsPopover(options: model.videoOptions) { model.applyVideoOptions($0) }
-                }
-        }
-        .padding(.horizontal, 8)
-        .background(.bar)
     }
 
     // MARK: 疊加訊息
@@ -140,10 +84,21 @@ struct MirrorContentView: View {
         if model.desktopMode, model.statusText == nil, model.desktopEmpty {
             VStack(spacing: 8) {
                 Image(systemName: "macwindow.on.rectangle").font(.largeTitle)
-                Text("從左側 App 列或工具列的 \(Image(systemName: "square.grid.3x3")) 開啟 App")
+                Text("從左側 App 列或導覽列的 \(Image(systemName: "square.grid.2x2")) 開啟 App")
             }
             .foregroundStyle(.secondary)
             .allowsHitTesting(false)
+        }
+        if model.appClosed, model.statusText == nil, let pkg = model.appPackage {
+            VStack(spacing: 12) {
+                AppIconView(catalog: catalog, package: pkg, size: 56).opacity(0.8)
+                Text("\(model.appLabel ?? catalog.label(for: pkg)) 已關閉")
+                    .font(.headline).foregroundStyle(.white)
+                Button("打開") { model.reopenApp() }
+                    .buttonStyle(.borderedProminent).controlSize(.large)
+            }
+            .padding(24)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
         }
         if let s = model.statusText {
             VStack(spacing: 12) {
@@ -155,28 +110,12 @@ struct MirrorContentView: View {
     }
 }
 
-struct ToolButton: View {
-    let symbol: String
-    let help: String
-    let action: () -> Void
-    init(_ symbol: String, _ help: String, action: @escaping () -> Void) {
-        self.symbol = symbol; self.help = help; self.action = action
-    }
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: symbol).frame(width: 24, height: 24)
-        }
-        .buttonStyle(.borderless)
-        .help(help)
-    }
-}
-
-/// 左側 App 列：已開啟（左邊有點）＋ 最近使用
+/// App 列：已開啟（左邊有點）＋ 最近使用
 struct AppRail: View {
     @ObservedObject var catalog: AppCatalog
     let onTap: (String) -> Void
     @State private var dragPkg: String?
-    /// 往右拖超過這個距離（拖出 App 列）放開才算
+    /// 往左或往右拖超過這個距離（拖出 App 列）放開才算
     static let tearOffDistance: CGFloat = 70
 
     var body: some View {
@@ -194,16 +133,17 @@ struct AppRail: View {
             }
             .padding(.vertical, 10)
         }
-        .background(.bar)
     }
 
     private func railIcon(_ pkg: String, running: Bool) -> some View {
         let dragging = dragPkg == pkg
-        return HStack(spacing: 3) {
-            Circle().fill(running ? Color.primary.opacity(0.7) : .clear).frame(width: 4, height: 4)
-            AppIconView(catalog: catalog, package: pkg, size: 40)
+        return ZStack {
+            AppIconView(catalog: catalog, package: pkg, size: 38)
                 .opacity(dragging ? 0.4 : 1)
+            Circle().fill(running ? Color.primary.opacity(0.7) : .clear).frame(width: 4, height: 4)
+                .frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 3)
         }
+        .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
         .onTapGesture { onTap(pkg) }
         // 把圖示拖出 App 列放開 → 在獨立視窗開啟
@@ -211,12 +151,12 @@ struct AppRail: View {
             .onChanged { v in
                 dragPkg = pkg
                 DragGhost.shared.show(icon: catalog.icon(for: pkg), at: NSEvent.mouseLocation,
-                                      armed: v.translation.width > Self.tearOffDistance)
+                                      armed: abs(v.translation.width) > Self.tearOffDistance)
             }
             .onEnded { v in
                 dragPkg = nil
                 DragGhost.shared.hide()
-                if v.translation.width > Self.tearOffDistance {
+                if abs(v.translation.width) > Self.tearOffDistance {
                     // 視窗左上角放在放開的位置
                     let m = NSEvent.mouseLocation
                     WindowManager.shared.openApp(catalog.device, package: pkg, at: NSPoint(x: m.x - 30, y: m.y + 20))
@@ -253,30 +193,68 @@ struct VideoSettingsPopover: View {
     @State var options: VideoOptions
     let apply: (VideoOptions) -> Void
 
+    private static let presets: [(name: String, options: VideoOptions)] = [
+        ("省流量", VideoOptions(maxFps: 30, bitRateMbps: 2, maxSize: 1024)),
+        ("一般", VideoOptions(maxFps: 60, bitRateMbps: 8, maxSize: 1920)),
+        ("高畫質", VideoOptions(maxFps: 60, bitRateMbps: 20, maxSize: 0)),
+    ]
+
+    /// 目前設定對應的預設（-1 = 自訂）
+    private var presetIndex: Int {
+        Self.presets.firstIndex { $0.options.maxFps == options.maxFps && $0.options.bitRateMbps == options.bitRateMbps
+            && $0.options.maxSize == options.maxSize } ?? -1
+    }
+
     var body: some View {
-        Form {
-            Picker("FPS", selection: $options.maxFps) {
-                ForEach([15, 24, 30, 45, 60, 90, 120], id: \.self) { Text("\($0)").tag($0) }
+        VStack(alignment: .leading, spacing: 16) {
+            Text("畫質").font(.headline)
+
+            Picker("", selection: Binding(get: { presetIndex }, set: { if $0 >= 0 { options = Self.presets[$0].options } })) {
+                ForEach(Array(Self.presets.enumerated()), id: \.offset) { Text($1.name).tag($0) }
+                if presetIndex < 0 { Text("自訂").tag(-1) }
             }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            VStack(spacing: 12) {
+                row("影格率") {
+                    Picker("", selection: $options.maxFps) {
+                        ForEach([15, 24, 30, 45, 60, 90, 120], id: \.self) { Text("\($0) fps").tag($0) }
+                    }
+                    .labelsHidden().fixedSize()
+                }
+                row("解析度上限") {
+                    Picker("", selection: $options.maxSize) {
+                        Text("不限制").tag(0)
+                        ForEach([2560, 1920, 1600, 1280, 1024, 800, 640], id: \.self) { Text("\($0) px").tag($0) }
+                    }
+                    .labelsHidden().fixedSize()
+                }
+                VStack(spacing: 6) {
+                    row("位元率") {
+                        Text(String(format: "%.1f Mbps", options.bitRateMbps)).monospacedDigit().foregroundStyle(.secondary)
+                    }
+                    Slider(value: $options.bitRateMbps, in: 0.5...40).controlSize(.small)
+                }
+            }
+
             HStack {
-                Text("Bitrate")
-                Slider(value: $options.bitRateMbps, in: 0.5...40, step: 0.5)
-                Text(String(format: "%.1f Mbps", options.bitRateMbps)).monospacedDigit().frame(width: 72, alignment: .trailing)
-            }
-            Picker("最大解析度", selection: $options.maxSize) {
-                Text("不限制").tag(0)
-                ForEach([2560, 1920, 1600, 1280, 1024, 800, 640], id: \.self) { Text("\($0)").tag($0) }
-            }
-            HStack {
-                Button("網路差") { options = VideoOptions(maxFps: 30, bitRateMbps: 2, maxSize: 1024) }
-                Button("一般") { options = VideoOptions(maxFps: 60, bitRateMbps: 8, maxSize: 1920) }
-                Button("高畫質") { options = VideoOptions(maxFps: 60, bitRateMbps: 20, maxSize: 0) }
                 Spacer()
-                Button("套用") { apply(options) }.keyboardShortcut(.defaultAction)
+                Button("套用") { apply(options) }
+                    .keyboardShortcut(.defaultAction)
+                    .buttonStyle(.borderedProminent)
             }
         }
-        .padding()
-        .frame(width: 380)
+        .padding(16)
+        .frame(width: 290)
+    }
+
+    private func row<C: View>(_ title: String, @ViewBuilder _ control: () -> C) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            control()
+        }
     }
 }
 
