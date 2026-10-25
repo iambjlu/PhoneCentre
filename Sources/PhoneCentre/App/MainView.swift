@@ -166,23 +166,33 @@ struct MainView: View {
             AdbSetupView()
         } else if let id = selection, let d = dm.device(id: id) {
             if d.isOnline {
-                // 分頁：標準的分段選擇器放在工具列（用最新 SDK 連結後由系統畫成玻璃藥丸）。
+                // 分頁：標準的分段選擇器放在工具列下方（跟內容同寬，用最新 SDK 連結後由系統畫成玻璃藥丸）。
                 // 內容只建立目前選到的分頁（其他分頁不用先載入縮圖、檔案列表）
-                Group {
-                    switch tab {
-                    case .overview: DeviceOverview(device: d)
-                    case .launchpad: LaunchpadView(device: d, catalog: dm.catalog(for: d))
-                    case .files: FileBrowserView(device: d).id(d.id)
-                    case .photos: CameraRollView(device: d).id(d.id)
-                    case .notifications: PhoneDataView(device: d, kind: .notifications).id(d.id)
-                    case .sms: PhoneDataView(device: d, kind: .sms).id(d.id)
-                    case .calls: PhoneDataView(device: d, kind: .calls).id(d.id)
+                VStack(spacing: 0) {
+                    FullWidthSegmentedControl(labels: DeviceTab.allCases.map(\.rawValue),
+                                              selection: Binding(get: { DeviceTab.allCases.firstIndex(of: tab) ?? 0 },
+                                                                 set: { tab = DeviceTab.allCases[$0] }))
+                    .padding(5)
+                    .glassCapsule()
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    Group {
+                        switch tab {
+                        case .overview: DeviceOverview(device: d)
+                        case .launchpad: LaunchpadView(device: d, catalog: dm.catalog(for: d))
+                        case .files: FileBrowserView(device: d).id(d.id)
+                        case .photos: CameraRollView(device: d).id(d.id)
+                        case .notifications: PhoneDataView(device: d, kind: .notifications).id(d.id)
+                        case .sms: PhoneDataView(device: d, kind: .sms).id(d.id)
+                        case .calls: PhoneDataView(device: d, kind: .calls).id(d.id)
+                        }
                     }
-                }                .softScrollEdge()
+                    .softScrollEdge()
+                }
                 .navigationTitle(d.displayName)
                 .navigationSubtitle(d.subtitle)
                 .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { detailWidth = $0 }
-                .modifier(DeviceToolbar(device: d, tab: $tab, width: detailWidth))
+                .modifier(DeviceToolbar(device: d, width: detailWidth))
             } else {
                 ContentUnavailableView(d.displayName, systemImage: "exclamationmark.triangle", description: Text(d.stateDescription))
             }
@@ -212,7 +222,6 @@ struct DeviceRow: View {
             }
             Spacer()
             Circle().fill(device.isOnline ? .green : .orange).frame(width: 7, height: 7)
-                .overlay { if selected { Circle().stroke(.white, lineWidth: 1.5).frame(width: 10, height: 10) } }
         }
         .contextMenu {
             if device.isOnline {
@@ -273,54 +282,74 @@ extension View {
 }
 
 
-/// 工具列：這一條跟內容區（側邊欄以外）同寬；裝置名稱靠左，分頁選擇器空間夠時在中間，
-/// 被名稱擠到才往右移一點，名稱放不下才截斷。隱藏系統標題，名稱與副標題自己畫。
+/// 工具列：隱藏系統標題，名稱與副標題自己畫（靠左，比系統預設再往右一點）
 private struct DeviceToolbar: ViewModifier {
     let device: Device
-    @Binding var tab: DeviceTab
     let width: CGFloat
 
     func body(content: Content) -> some View {
         content
             .toolbar(removing: .title)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    TitleTabsLayout {
-                        VStack(alignment: .leading, spacing: 0) {
-                            Text(device.displayName).font(.headline).lineLimit(1)
-                            Text(device.subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                        }
-                        .padding(.leading, 8)
-                        Picker("", selection: $tab) {
-                            ForEach(DeviceTab.allCases) { Text($0.rawValue).tag($0) }
-                        }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
-                        .fixedSize()
-                    }
-                    .frame(width: max(width - 24, 300))
-                }
-            }
+            .toolbar { titleItem }
+    }
+
+    private var titleView: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(device.displayName).font(.headline).lineLimit(1)
+            Text(device.subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        }
+        .padding(.leading, 14)
+        .frame(width: max(width - 24, 300), alignment: .leading)
+    }
+
+    /// 名稱不要系統給工具列項目的液態玻璃底
+    @ToolbarContentBuilder private var titleItem: some ToolbarContent {
+        if #available(macOS 26.0, *) {
+            ToolbarItem(placement: .principal) { titleView }.sharedBackgroundVisibility(.hidden)
+        } else {
+            ToolbarItem(placement: .principal) { titleView }
+        }
     }
 }
 
-/// 第一個子視圖（名稱）靠左；第二個（分頁）盡量置中，會被名稱擠到才往右移，名稱放不下才截斷
-private struct TitleTabsLayout: Layout {
-    var gap: CGFloat = 20
+extension View {
+    /// 膠囊形的液態玻璃底（舊系統用材質）
+    @ViewBuilder func glassCapsule() -> some View {
+        if #available(macOS 26.0, *) {
+            self.glassEffect(.regular, in: Capsule())
+        } else {
+            self.background(.thinMaterial, in: Capsule())
+        }
+    }
+}
 
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let t = subviews[0].sizeThatFits(.unspecified), p = subviews[1].sizeThatFits(.unspecified)
-        return CGSize(width: proposal.width ?? t.width + gap + p.width, height: max(t.height, p.height))
+/// 系統的分段選擇器（外觀與 `.pickerStyle(.segmented)` 相同），但每一格等寬、整條撐滿可用寬度
+/// （SwiftUI 的 Picker 只會貼著內容寬度，沒辦法撐滿）
+private struct FullWidthSegmentedControl: NSViewRepresentable {
+    let labels: [String]
+    @Binding var selection: Int
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeNSView(context: Context) -> NSSegmentedControl {
+        let c = NSSegmentedControl(labels: labels, trackingMode: .selectOne,
+                                   target: context.coordinator, action: #selector(Coordinator.changed(_:)))
+        c.segmentDistribution = .fillEqually
+        return c
     }
 
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let title = subviews[0], tabs = subviews[1]
-        let tw = title.sizeThatFits(.unspecified).width
-        let pw = tabs.sizeThatFits(.unspecified).width
-        var x = max(bounds.midX - pw / 2, bounds.minX + tw + gap)   // 置中，被名稱擠到才右移
-        x = min(x, bounds.maxX - pw)
-        title.place(at: CGPoint(x: bounds.minX, y: bounds.midY), anchor: .leading,
-                    proposal: ProposedViewSize(width: max(x - gap - bounds.minX, 0), height: bounds.height))
-        tabs.place(at: CGPoint(x: x, y: bounds.midY), anchor: .leading, proposal: .unspecified)
+    func updateNSView(_ c: NSSegmentedControl, context: Context) {
+        context.coordinator.parent = self
+        if c.selectedSegment != selection { c.selectedSegment = selection }
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSSegmentedControl, context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? nsView.fittingSize.width, height: nsView.fittingSize.height)
+    }
+
+    final class Coordinator: NSObject {
+        var parent: FullWidthSegmentedControl
+        init(_ p: FullWidthSegmentedControl) { parent = p }
+        @objc func changed(_ sender: NSSegmentedControl) { parent.selection = sender.selectedSegment }
     }
 }
