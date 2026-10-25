@@ -283,45 +283,41 @@ struct SideColumn: View {
 
     /// 視窗底部的橫條：狀態環、現在在用的 App、其他、導覽項目（可左右捲動）、金剛三鍵（固定在最右邊）
     private var bottomBar: some View {
-        ZStack {
-            HStack(spacing: 8) {
-                StatusIndicator(status: model.status, size: 34, loaded: model.statusLoaded, compact: true)
-                    .contentShape(Rectangle())
-                    .onTapGesture { if !model.isVirtualDisplay { model.session?.send(.expandNotifications) } }
-                glassGroup {
-                    HStack(spacing: 8) {
-                        if !model.isAppWindow {
-                            AppRail(catalog: catalog, part: .current, horizontal: true, showName: barWidth > 900) { pkg in model.launch(pkg) }
-                            AppRail(catalog: catalog, part: .others, horizontal: true) { pkg in model.launch(pkg) }
-                        }
-                        // 導覽項目與金剛三鍵放在最右邊同一塊盤子裡，中間只用分隔線隔開；
-                        // 項目長度適中就好（不撐滿），放不下才捲動，金剛三鍵固定在最右邊
+        HStack(spacing: 8) {
+            StatusIndicator(status: model.status, size: 34, loaded: model.statusLoaded, compact: true)
+                .contentShape(Rectangle())
+                .onTapGesture { if !model.isVirtualDisplay { model.session?.send(.expandNotifications) } }
+            glassGroup {
+                HStack(spacing: 8) {
+                    if model.isAppWindow, let pkg = model.appPackage {
+                        // 獨立視窗：沒有其他 App 盤子，現用的 App 放在「狀態環與導覽盤子之間那塊空白」的正中間
                         Spacer(minLength: 0)
-                        HStack(spacing: 6) {
-                            FitScroll(axis: .horizontal) { navItems }
-                            Rectangle().fill(Color.primary.opacity(0.35)).frame(width: 1, height: 28)
-                            navKeys
+                        HStack(spacing: 8) {
+                            AppIconView(catalog: catalog, package: pkg, size: 34)
+                            if barWidth > 900 {
+                                Text(model.appLabel ?? catalog.label(for: pkg)).font(.system(size: 12, weight: .medium))
+                                    .lineLimit(1).frame(maxWidth: 140)
+                                    .fixedSize(horizontal: true, vertical: false)   // 盤子貼著圖示與名稱的寬度，不撐長
+                                    .foregroundStyle(.white.opacity(0.9))
+                            }
                         }
-                        .padding(.horizontal, 6)
-                        .liquidPanel()
-                        .layoutPriority(1)
-                        .disabled(model.appClosed).opacity(model.appClosed ? 0.4 : 1)
+                        .padding(.horizontal, 8).padding(.vertical, 4).liquidPanel()
+                    } else {
+                        AppRail(catalog: catalog, part: .current, horizontal: true, showName: barWidth > 900) { pkg in model.launch(pkg) }
+                        AppRail(catalog: catalog, part: .others, horizontal: true) { pkg in model.launch(pkg) }
                     }
-                }
-            }
-            // 獨立視窗：現用的 App 放在整條橫條的正中間（本來放喜好項目與其他已開啟 App 的地方）
-            if model.isAppWindow, let pkg = model.appPackage {
-                glassGroup {
-                    HStack(spacing: 8) {
-                        AppIconView(catalog: catalog, package: pkg, size: 34)
-                        if barWidth > 900 {
-                            Text(model.appLabel ?? catalog.label(for: pkg)).font(.system(size: 12, weight: .medium))
-                                .lineLimit(1).frame(maxWidth: 140)
-                                .fixedSize(horizontal: true, vertical: false)   // 盤子貼著圖示與名稱的寬度，不撐長
-                                .foregroundStyle(.white.opacity(0.9))
-                        }
+                    // 導覽項目與金剛三鍵放在最右邊同一塊盤子裡，中間只用分隔線隔開；
+                    // 項目長度適中就好（不撐滿），放不下才捲動，金剛三鍵固定在最右邊
+                    Spacer(minLength: 0)
+                    HStack(spacing: 6) {
+                        FitScroll(axis: .horizontal) { navItems }
+                        Rectangle().fill(Color.primary.opacity(0.35)).frame(width: 1, height: 28)
+                        navKeys
                     }
-                    .padding(.horizontal, 8).padding(.vertical, 4).liquidPanel()
+                    .padding(.horizontal, 6)
+                    .liquidPanel()
+                    .layoutPriority(1)
+                    .disabled(model.appClosed).opacity(model.appClosed ? 0.4 : 1)
                 }
             }
         }
