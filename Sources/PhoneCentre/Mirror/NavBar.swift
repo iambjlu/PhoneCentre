@@ -3,6 +3,14 @@ import SwiftUI
 
 // MARK: 毛玻璃
 
+/// 玻璃面板裡的分隔線：系統預設的 `Divider` 在玻璃上幾乎看不見，這條用 1pt 的前景色線，看得清楚
+struct GlassDivider: View {
+    var opacity = 0.3
+    var body: some View {
+        Rectangle().fill(Color.primary.opacity(opacity)).frame(height: 1)
+    }
+}
+
 extension View {
     /// 疊在畫面上的東西統一用毛玻璃當底：新系統用液態玻璃，舊系統用材質
     @ViewBuilder func glassCard(cornerRadius: CGFloat = 12) -> some View {

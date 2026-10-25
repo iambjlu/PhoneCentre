@@ -60,7 +60,7 @@ struct PhoneSMSView: View {
                     .background(on ? Color.accentColor : .clear, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .contentShape(Rectangle())
                     .onTapGesture { selected = c.id }
-                    if c.id != list.last?.id { Divider().padding(.leading, 56).padding(.trailing, 10) }
+                    if c.id != list.last?.id { GlassDivider().padding(.leading, 56).padding(.trailing, 10) }
                 }
             }
             .padding(8)

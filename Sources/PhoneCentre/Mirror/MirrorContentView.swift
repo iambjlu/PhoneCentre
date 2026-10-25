@@ -174,7 +174,7 @@ struct AppRail: View {
                 railIcon(pkg, running: true)
             }
             if !opened.isEmpty && !unopenedPins.isEmpty {
-                Divider().padding(.horizontal, 12).opacity(0.4)
+                GlassDivider(opacity: 0.55).padding(.horizontal, 10)
             }
             ForEach(unopenedPins, id: \.self) { pkg in
                 railIcon(pkg, running: false)

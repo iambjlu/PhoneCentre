@@ -189,7 +189,7 @@ struct PhoneDataView: View {
                     row(item)
                         .padding(.horizontal, 14).padding(.vertical, 10)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    if item.id != items.last?.id { Divider().padding(.horizontal, 14) }
+                    if item.id != items.last?.id { GlassDivider().padding(.horizontal, 14) }
                 }
             }
             .padding(.vertical, 6)
