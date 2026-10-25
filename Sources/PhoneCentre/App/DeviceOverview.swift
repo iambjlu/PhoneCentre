@@ -18,7 +18,7 @@ struct DeviceOverview: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(device.displayName).font(.title.bold())
                         Text(device.subtitle).foregroundStyle(.secondary)
-                        Text(device.isRemote ? "透過遠端 PhoneCentre" : (device.isWireless ? "無線" : "USB") + (showSerial ? " · \(device.serial)" : ""))
+                        Text(device.isRemote ? "透過遠端 PhoneCentre" : (device.isWireless ? "無線 · \(device.serial)" : "USB · \(device.serial)"))
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
