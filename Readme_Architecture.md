@@ -47,6 +47,7 @@ Sources/PhoneCentre/           Swift 原始碼（下面各章節；PhoneData 為
 在 MainActor 上建立 `NSApplication` 與 `AppDelegate` 並執行。
 
 ### AppDelegate.swift
+- 固定使用深色外觀（`NSApp.appearance = .darkAqua`），不跟隨系統亮色模式——鏡像視窗的標題列與右側欄是照深色設計的，亮色模式下標題列文字會和視窗按鈕疊在一起。
 - 一般模式：啟動 `CacheManager`、`DeviceManager`（輪詢與自動維持連線）、`RemoteManager`、`ShareServer`、選單列，並開啟主視窗。關閉所有視窗後仍留在選單列（關掉選單列圖示時才會結束）。
 - 子程序模式（`ChildMode.isChild`）：只開一個鏡像／App 視窗，視窗關閉就結束。
 - 建立主選單（只有 App 選單：設定 ⌘,、顯示PhoneCentre ⌘0、隱藏、結束；不放「編輯」「視窗」選單）。

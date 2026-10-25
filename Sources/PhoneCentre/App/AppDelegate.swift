@@ -9,6 +9,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
+        // 整個 App 固定用深色外觀：鏡像視窗的標題列、右側欄等都是照深色設計，亮色模式下標題列會和視窗按鈕疊在一起
+        NSApp.appearance = NSAppearance(named: .darkAqua)
         buildMenu()
         if ChildMode.isChild {
             ChildMode.bootstrap()
