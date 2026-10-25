@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 enum DeviceTab: String, CaseIterable, Identifiable {
-    case overview = "總覽", launchpad = "啟動台", files = "檔案", photos = "相機膠卷", notifications = "通知", sms = "簡訊", calls = "通話記錄"
+    case overview = "總覽", launchpad = "啟動台", files = "檔案", notifications = "通知", sms = "簡訊", calls = "通話記錄", photos = "相機膠卷"
     var id: String { rawValue }
     var symbol: String {
         switch self {
