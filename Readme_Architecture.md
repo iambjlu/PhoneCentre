@@ -74,7 +74,7 @@ Sources/PhoneCentre/           Swift 原始碼（下面各章節；PhoneData 為
 ### MainView.swift
 主視窗：標準的 `NavigationSplitView`，分頁是放在工具列的原生分段選擇器；用最新 SDK 連結後由系統自動套用 Liquid Glass（圓角視窗、側邊欄、工具列按鈕、分頁藥丸）。視窗透明，最底層墊一層 `NSVisualEffectView`（`.underWindowBackground`）當毛玻璃底，SwiftUI 內容不加自訂底色。
 - 側邊欄：本機裝置、記住但目前離線的無線裝置（右鍵可立即重連或忘記）、各遠端 PhoneCentre 的裝置（每區標題有連線狀態燈與選單：重新連線、編輯、移除；沒有裝置時顯示狀態與「重新連線」按鈕）；底部顯示 adb server 狀態與最近事件。
-- 內容：分頁「總覽／啟動台／檔案／相機膠卷／訊息通知」；找不到 adb 時顯示 `AdbSetupView`（一鍵下載 Google Platform-Tools）。
+- 內容：分頁「總覽／啟動台／檔案／相機膠卷／通知／簡訊／通話記錄」；找不到 adb 時顯示 `AdbSetupView`（一鍵下載 Google Platform-Tools）。
 
 ### AddDeviceSheet.swift
 - 無線 ADB：「USB 轉無線」（已連上的 USB 裝置一鍵 `adb tcpip 5555`，取得 wlan0 IP 後自動 `adb connect`）、`adb connect`、Android 11+ 的配對（`adb pair`）、`adb mdns services` 找到的裝置。
@@ -220,7 +220,7 @@ Apple「照片」風格相機膠卷：相簿選擇（DCIM 與 Pictures 下的資
 - 保存期限：`prune()` 依 `smsRetentionDays`／`callRetentionDays`／`notificationRetentionDays`（0 = 永久）刪除過期資料；手機上還在的通知不刪，已清除的通知以首次看到的時間計算。啟動、設定改變、新資料進來與每小時執行。
 
 ### PhoneDataView.swift
-主視窗「訊息通知」分頁。未開啟收集時顯示說明與開啟按鈕。上方分段選擇通知／簡訊／通話記錄、搜尋、立即更新、選單（停止收集、刪除這台已保存的資料）。通知再分「還在手機上」與「已清除（保存期限內）」，預設隱藏常駐通知（可勾選顯示）。`PhoneDataRetentionPicker` 是設定頁用的保存天數選單。
+主視窗的「通知」「簡訊」「通話記錄」三個分頁（與啟動台同層級，同一個 `PhoneDataView`，以 `kind` 區分）。未開啟收集時顯示說明與開啟按鈕。上方有搜尋、立即更新、選單（停止收集、刪除這台已保存的資料），以及這個分頁自己的「保存期限」選單（改的就是「設定 → 儲存」裡對應的那一項，變更後立刻清除過期資料）。通知再分「還在手機上」與「已清除（保存期限內）」，預設隱藏常駐通知（可勾選顯示）。`PhoneDataRetentionPicker` 是設定頁用的保存天數選單。
 
 ## Sources/PhoneCentre/Launchpad
 

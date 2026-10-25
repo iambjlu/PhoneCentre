@@ -1,6 +1,6 @@
 import SwiftUI
 
-private enum DataKind: String, CaseIterable, Identifiable {
+enum DataKind: String, CaseIterable, Identifiable {
     case notifications = "通知", sms = "簡訊", calls = "通話記錄"
     var id: String { rawValue }
 }
@@ -10,12 +10,12 @@ private enum NotificationScope: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-/// 「訊息通知」分頁：通知（分「還在」與「已清除」）、簡訊、通話記錄
+/// 通知／簡訊／通話記錄各自一個分頁（通知再分「還在」與「已清除」）
 struct PhoneDataView: View {
     let device: Device
+    let kind: DataKind
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var store = PhoneDataStore.shared
-    @State private var kind: DataKind = .notifications
     @State private var scope: NotificationScope = .active
     @State private var query = ""
     @State private var showOngoing = false
@@ -25,7 +25,7 @@ struct PhoneDataView: View {
         if !settings.phoneDataEnabled {
             VStack(spacing: 14) {
                 Image(systemName: "bell.badge").font(.system(size: 44)).foregroundStyle(.secondary)
-                Text("保存簡訊、通知與通話記錄").font(.title2.bold())
+                Text("保存\(kind.rawValue)").font(.title2.bold())
                 Text("PhoneCentre 會定時透過 adb 讀取手機上的簡訊、通知與通話記錄並保存在這台 Mac，不需要在手機安裝任何程式。\n保存天數可在「設定 → 儲存」分別調整。這些是個人隱私資料，只存在這台 Mac 的本機。")
                     .multilineTextAlignment(.center).frame(maxWidth: 460).foregroundStyle(.secondary)
                 Button("開啟") { settings.data.phoneDataEnabled = true }
@@ -51,10 +51,6 @@ struct PhoneDataView: View {
     private func header(_ b: PhoneDataBundle) -> some View {
         VStack(spacing: 8) {
             HStack {
-                Picker("", selection: $kind) {
-                    ForEach(DataKind.allCases) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented).labelsHidden().frame(maxWidth: 280)
                 TextField("搜尋", text: $query).textFieldStyle(.roundedBorder).frame(maxWidth: 220)
                 Spacer()
                 if store.syncing.contains(CacheManager.key(for: device)) { ProgressView().controlSize(.small) }
@@ -74,21 +70,24 @@ struct PhoneDataView: View {
                     Toggle("顯示常駐通知", isOn: $showOngoing).toggleStyle(.checkbox)
                 }
                 Spacer()
-                Text(retentionNote + (b.lastSync.map { " · 上次更新 " + $0.formatted(date: .omitted, time: .standard) } ?? ""))
-                    .font(.caption).foregroundStyle(.secondary)
+                if let t = b.lastSync {
+                    Text("上次更新 " + t.formatted(date: .omitted, time: .standard)).font(.caption).foregroundStyle(.secondary)
+                }
+                PhoneDataRetentionPicker(title: "保存期限", days: retentionDays)
+                    .fixedSize()
+                    .onChange(of: retentionDays.wrappedValue) { _, _ in store.prune() }
             }
         }
         .padding(12)
     }
 
-    private var retentionNote: String {
-        let d: Int
+    /// 這個分頁對應的保存天數設定（和「設定 → 儲存」同一份）
+    private var retentionDays: Binding<Int> {
         switch kind {
-        case .notifications: d = settings.notificationRetentionDays
-        case .sms: d = settings.smsRetentionDays
-        case .calls: d = settings.callRetentionDays
+        case .notifications: return $settings.data.notificationRetentionDays
+        case .sms: return $settings.data.smsRetentionDays
+        case .calls: return $settings.data.callRetentionDays
         }
-        return d > 0 ? "保存最近 \(d) 天" : "永久保存"
     }
 
     // MARK: 內容
