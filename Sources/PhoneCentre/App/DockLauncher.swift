@@ -12,22 +12,52 @@ enum ChildMode {
         var iconPath: String?
         var label: String?
         var topLeft: NSPoint?
+        var roSerial: String?
+    }
+
+    /// 副本旁邊的啟動參數檔：從 Dock 釘選的圖示直接點開時沒有命令列參數，改讀這個檔
+    struct Params: Codable {
+        var serial: String
+        var roSerial: String?
+        var host: String
+        var port: Int
+        var remote: String?
+        var package: String?
+        var label: String?
+        var desktop: Bool
+        var icon: String?
+    }
+
+    static var paramsFile: URL? {
+        let bundle = Bundle.main.bundleURL
+        guard bundle.pathExtension == "app", Bundle.main.bundleIdentifier?.hasPrefix("com.iambjlu.PhoneCentre.w") == true else { return nil }
+        return bundle.deletingLastPathComponent().appendingPathComponent("params.json")
     }
 
     static let args: Args? = {
         let a = CommandLine.arguments
-        guard a.contains("--child") else { return nil }
         func value(_ k: String) -> String? { a.firstIndex(of: k).flatMap { $0 + 1 < a.count ? a[$0 + 1] : nil } }
-        guard let serial = value("--serial") else { return nil }
-        var ep = AdbEndpoint(host: value("--host") ?? "127.0.0.1", port: Int(value("--port") ?? "") ?? 5037)
-        ep.remoteID = value("--remote").flatMap(UUID.init(uuidString:))
-        return Args(serial: serial, endpoint: ep, package: value("--package"),
-                    desktop: a.contains("--desktop"), iconPath: value("--icon"), label: value("--label"),
-                    topLeft: value("--at").flatMap { s -> NSPoint? in
-                        let p = s.split(separator: ",").compactMap { Double($0) }
-                        return p.count == 2 ? NSPoint(x: p[0], y: p[1]) : nil
-                    })
+        if a.contains("--child"), let serial = value("--serial") {
+            var ep = AdbEndpoint(host: value("--host") ?? "127.0.0.1", port: Int(value("--port") ?? "") ?? 5037)
+            ep.remoteID = value("--remote").flatMap(UUID.init(uuidString:))
+            return Args(serial: serial, endpoint: ep, package: value("--package"),
+                        desktop: a.contains("--desktop"), iconPath: value("--icon"), label: value("--label"),
+                        topLeft: value("--at").flatMap { s -> NSPoint? in
+                            let p = s.split(separator: ",").compactMap { Double($0) }
+                            return p.count == 2 ? NSPoint(x: p[0], y: p[1]) : nil
+                        }, roSerial: loadParams()?.roSerial)
+        }
+        guard let p = loadParams() else { return nil }
+        var ep = AdbEndpoint(host: p.host, port: p.port)
+        ep.remoteID = p.remote.flatMap(UUID.init(uuidString:))
+        return Args(serial: p.serial, endpoint: ep, package: p.package, desktop: p.desktop,
+                    iconPath: p.icon, label: p.label, topLeft: nil, roSerial: p.roSerial)
     }()
+
+    private static func loadParams() -> Params? {
+        guard let f = paramsFile, let raw = try? Data(contentsOf: f) else { return nil }
+        return try? JSONDecoder().decode(Params.self, from: raw)
+    }
 
     static var isChild: Bool { args != nil }
 
@@ -39,11 +69,21 @@ enum ChildMode {
         }
         Task {
             var d = Device(serial: a.serial, state: "device", endpoint: a.endpoint)
+            if let ro = a.roSerial, let found = await resolve(serial: a.serial, roSerial: ro, endpoint: a.endpoint) { d.serial = found }
             d.info = await DeviceInfo.fetch(d.client)
             WindowManager.shared.show(d, package: a.package, desktop: a.desktop, label: a.label, at: a.topLeft)
             // 子程序也載入 App 清單（名稱、圖示），給左側 App 列與拖出的視窗標題使用
             await DeviceManager.shared.catalog(for: d).reload()
         }
+    }
+
+    /// 原本的序號不在線上（例如無線偵錯 port 變了）時，用 ro.serialno 找出同一支手機
+    private static func resolve(serial: String, roSerial: String, endpoint: AdbEndpoint) async -> String? {
+        guard let text = try? await Task.detached(operation: { try AdbSocket.hostQuery(endpoint, "host:devices-l") }).value else { return nil }
+        let online = Device.parse(text, endpoint: endpoint).filter(\.isOnline)
+        if online.contains(where: { $0.serial == serial }) { return nil }
+        for d in online where await d.client.getprop("ro.serialno") == roSerial { return d.serial }
+        return nil
     }
 
     /// Android 圖示補上圓角底板，看起來比較像 Mac 圖示
@@ -80,7 +120,10 @@ enum DockLauncher {
         let bad = CharacterSet(charactersIn: "/:\\\"*?<>|").union(.controlCharacters)
         let cleaned = String(String.UnicodeScalarView(title.unicodeScalars.map { bad.contains($0) ? "-" : $0 }))
         let safeTitle = String(cleaned.prefix(40))
-        let app = dir.appendingPathComponent("\(safeTitle) (\(hash)).app")
+        // 每個視窗一個資料夾（用雜湊區分），.app 本身用乾淨的名稱，Dock 釘選後名稱才好看
+        let folder = dir.appendingPathComponent(hash, isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let app = folder.appendingPathComponent("\(safeTitle.isEmpty ? "PhoneCentre" : safeTitle).app")
         Task {
             do {
                 try await prepare(app, bundleID: bundleID, title: title)
@@ -109,6 +152,16 @@ enum DockLauncher {
                 try? png.write(to: iconFile)
                 args += ["--icon", iconFile.path]
                 NSWorkspace.shared.setIcon(ChildMode.rounded(icon), forFile: app.path, options: [])
+            }
+            // 啟動參數另存在副本旁邊：從 Dock 釘選的圖示再次點開時，用這個檔當作參數（不會變成另一個完整的 PhoneCentre）
+            let params = ChildMode.Params(serial: device.serial,
+                                          roSerial: device.info?.serialNo,
+                                          host: device.endpoint.host, port: device.endpoint.port,
+                                          remote: device.endpoint.remoteID?.uuidString,
+                                          package: package, label: package == nil ? nil : title, desktop: desktop,
+                                          icon: icon == nil ? nil : dir.appendingPathComponent("\(hash).png").path)
+            if let raw = try? JSONEncoder().encode(params) {
+                try? raw.write(to: app.deletingLastPathComponent().appendingPathComponent("params.json"), options: .atomic)
             }
             let cfg = NSWorkspace.OpenConfiguration()
             cfg.arguments = args

@@ -110,7 +110,9 @@ final class AppSettings: ObservableObject {
 
     private init() {
         customAdbPath = d.string(forKey: "customAdbPath") ?? ""
-        settingsFolder = d.string(forKey: "settingsFolder").map { URL(fileURLWithPath: $0, isDirectory: true) }
+        // 子程序（Dock 獨立視窗）不讀寫設定資料夾，只用主程式寫在 UserDefaults suite 的那份，
+        // 這樣 iCloud Drive 等資料夾的存取權限只會由主程式詢問一次
+        settingsFolder = ChildMode.isChild ? nil : d.string(forKey: "settingsFolder").map { URL(fileURLWithPath: $0, isDirectory: true) }
         data = SettingsData()
         data = loadData() ?? SettingsData()
         startWatching()

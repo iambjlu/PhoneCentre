@@ -1,6 +1,6 @@
 # PhoneCentre 架構說明
 
-macOS（SwiftUI + AppKit）的 Android 手機中心。透過 adb 連線手機，用 scrcpy-server 做畫面鏡像與遠端操作，
+macOS（SwiftUI + AppKit）的 Android PhoneCentre。透過 adb 連線手機，用 scrcpy-server 做畫面鏡像與遠端操作，
 另外提供檔案管理、相機膠卷、啟動台、選單列快速取用，以及讓其他 PhoneCentre 加密連入。
 
 - 建置：`scripts/build.sh`（輸出 `build/PhoneCentre.app`；加 `--install` 會複製到 /Applications）
@@ -49,7 +49,7 @@ Sources/PhoneCentre/           Swift 原始碼（下面各章節；PhoneData 為
 ### AppDelegate.swift
 - 一般模式：啟動 `CacheManager`、`DeviceManager`（輪詢與自動維持連線）、`RemoteManager`、`ShareServer`、選單列，並開啟主視窗。關閉所有視窗後仍留在選單列（關掉選單列圖示時才會結束）。
 - 子程序模式（`ChildMode.isChild`）：只開一個鏡像／App 視窗，視窗關閉就結束。
-- 建立主選單（只有 App 選單：設定 ⌘,、顯示手機中心 ⌘0、隱藏、結束；不放「編輯」「視窗」選單）。
+- 建立主選單（只有 App 選單：設定 ⌘,、顯示PhoneCentre ⌘0、隱藏、結束；不放「編輯」「視窗」選單）。
 
 ### AppSettings.swift
 - `SettingsData`：所有可同步的設定（Codable）。讀檔時以預設值補齊缺少的欄位，舊設定檔也能讀。
@@ -151,6 +151,7 @@ Mac 虛擬 keyCode（與鍵盤配置、輸入法無關）→ Android keycode；�
 
 ### MirrorModel.swift
 一個鏡像視窗的狀態與工作階段管理。
+- 變更畫質、視窗大小、旋轉方向，或影像長寬比／解析度改變時，畫面會短暫黑屏；`showChange`／`pendingStatus` 在這段期間顯示「正在變更…」提示（新畫面出來或逾時就消失；調整視窗大小是舊 session 撐著時也顯示）。
 - 啟動／重啟 session；重啟時先拔掉舊 session 的回呼（避免晚到的「已停止」被當成新連線中斷），並延遲 0.6 秒等舊 server 釋放硬體編碼器。
 - 自動維持連線：連線中斷且裝置回來就重連。
 - 虛擬顯示器 id：連線後以 `dumpsys display` 找名為 scrcpy、大小相符且尚未被其他視窗認領的顯示器（`claimedDisplays`），用於 `input -d`、`screencap -d`、搬移 App。
@@ -169,10 +170,10 @@ Mac 虛擬 keyCode（與鍵盤配置、輸入法無關）→ Android keycode；�
 手機狀態：一次 shell 取得 `dumpsys battery`（電量、是否接電）、`dumpsys connectivity`（預設網路是 Wi-Fi 還是 MOBILE[LTE] → 4G/5G）、`dumpsys telephony.registry`（有資料連線的那張 SIM，否則第一張；訊號 level 0–4、是否有服務）、`gsm.sim.state`。`MirrorModel` 每 5 秒更新；另含 Wi-Fi RSSI（格數）、自動旋轉與目前鎖定方向。
 
 ### NavBar.swift
-右側欄 `SideColumn`：整條是深色毛玻璃底（`GlassBackground`，視窗透明，桌面透出來），上面疊兩塊圓角液態玻璃面板（`liquidPanel`，macOS 26 用 `glassEffect`＋`GlassEffectContainer`，舊系統用材質）：App 列一塊（釘選＋執行中，高度跟圖示數量，放得下就剛好包住，放不下才捲動；沒有圖示就不畫）、導覽列一塊（獨立視窗沒有 App 列）。上方 `StatusIndicator`（外環＝電池，分左右兩段、上方留給電量數字（不加 %）、充電為綠色、≤20% 紅色；中間是較大的 Wi-Fi（依 RSSI 格數）或 4G/5G；訊號格是排在電池環下方缺口、同一個圓上的 4 個點（點與點、點與環端的角度間隔相同）；點一下狀態環（主螢幕）會降下通知中心；電量數字壓在環頂端缺口的正中間，不與環重疊；點與環一起在同一個 Canvas 繪製，大小一致，格數取自三星 `SignalBarInfo`），中間 App 列（獨立視窗改在欄位正中間顯示目前 App 的圖示與名稱），下方導覽列。導覽列由上到下（最下面三顆依序是返回、主畫面、多工）：畫質設定、輸入方式（選單，`keyboard`＝實體按鍵、`keyboard.fill`＝Mac 輸入法）、桌面模式的啟動台、模擬定位、聲音（選單）、截圖、旋轉（選單：四個角度的 iPhone 圖示與自動旋轉開關；獨立視窗是旋轉視窗方向）、黑屏與電源（只有主螢幕）、返回、主畫面、多工。獨立視窗的主畫面是「隱藏視窗」（`xmark.square`；視窗 `orderOut`，連線與虛擬顯示器繼續，App 留在原顯示器；從 App 列再開或點 Dock 圖示叫回來）、多工是「強制停止並關閉視窗」（六角形加叉）。多工「|||」、主畫面（圓角方形）、返回「<」是仿 One UI 的自繪圖示。`glassCard` 是疊在畫面上所有東西（提示、橫幅、已關閉卡片）共用的毛玻璃底。
+右側欄 `SideColumn`：整條是深色毛玻璃底（`GlassBackground`，視窗透明，桌面透出來），上面疊兩塊圓角液態玻璃面板（`liquidPanel`，macOS 26 用 `glassEffect`＋`GlassEffectContainer`，舊系統用材質）：App 列一塊（釘選＋執行中，高度跟圖示數量，放得下就剛好包住，放不下才捲動；沒有圖示就不畫）、導覽列一塊（獨立視窗沒有 App 列）。上方 `StatusIndicator`（外環＝電池，分左右兩段、上方留給電量數字（不加 %）、充電為綠色、≤20% 紅色；中間是較大的 Wi-Fi（依 RSSI 格數）或 4G/5G；訊號格是排在電池環下方缺口、同一個圓上的 4 個點（點與點、點與環端的角度間隔相同）；點一下狀態環（主螢幕）會降下通知中心；電量數字壓在環頂端缺口的正中間，不與環重疊；點與環一起在同一個 Canvas 繪製，大小一致，格數取自三星 `SignalBarInfo`），中間 App 列（獨立視窗改在欄位正中間顯示目前 App 的圖示與名稱），下方導覽列。導覽列由上到下（最下面三顆依序是返回、主畫面、多工）：畫質設定（`environments.circle`）、輸入方式（選單，`keyboard`＝實體按鍵、`keyboard.fill`＝Mac 輸入法）、桌面模式的啟動台、模擬定位、聲音（選單）、截圖、旋轉（選單：四個角度的 iPhone 圖示與自動旋轉開關；獨立視窗是旋轉視窗方向）、黑屏與電源（只有主螢幕）、返回、主畫面、多工。獨立視窗的主畫面是「隱藏視窗」（`xmark.square`；視窗 `orderOut`，連線與虛擬顯示器繼續，App 留在原顯示器；從 App 列再開或點 Dock 圖示叫回來）、多工是「強制停止並關閉視窗」（六角形加叉）。多工「|||」、主畫面（圓角方形）、返回「<」是仿 One UI 的自繪圖示。`glassCard` 是疊在畫面上所有東西（提示、橫幅、已關閉卡片）共用的毛玻璃底。
 
 ### LocationSimulator.swift
-模擬定位：`LocationSimulatorSheet` 用 MapKit 地圖（點選或搜尋）選位置，經由 `cmd location providers add-test-provider／set-test-provider-location`（gps 與 network，先以 `appops` 允許 shell 的 MOCK_LOCATION）讓手機採用；「停止模擬」移除測試提供者。
+模擬定位：`LocationSimulatorSheet` 用 MapKit 地圖（點選或搜尋）選位置，經由 `cmd location providers add-test-provider／set-test-provider-location`（gps 與 network，先以 `appops` 允許 shell 的 MOCK_LOCATION）讓手機採用；由 `LocationSimulation`（單例，依裝置記錄）負責維持：套用後每 5 秒只重送位置（測試提供者不見了就整組重建），跟對話框開不開無關，關掉對話框也不會取消；「停止模擬」只在模擬中才出現，會移除測試提供者。導覽列的定位圖示模擬中換成 `location.slash.fill`，沒模擬是 `location`；重開對話框會顯示目前模擬的位置。
 
 ### PatternPad.swift
 3×3 圖形密碼輸入元件（點編號 1–9）。解鎖密碼儲存為 `pattern:<編號>`；`LockScreenHelper.unlock` 用 `uiautomator dump` 找 `LockPatternView` 的範圍（找不到就用螢幕下半部推測），再用 `input motionevent` 畫出圖形。
@@ -228,12 +229,12 @@ Apple「照片」風格相機膠卷：相簿選擇（DCIM 與 Pictures 下的資
 ## Sources/PhoneCentre/Launchpad
 
 ### LaunchpadView.swift
-類似 Mac 新版啟動台：上方「開啟方式」下拉選單（獨立視窗／主螢幕）、全部／使用者／系統篩選、搜尋、App 圖示格（已開啟的下方有點）；沒有搜尋、篩選為「全部」時分區顯示：「喜好項目」（釘選，圖示有星號標記）、「已開啟」（執行中但沒釘選）、「所有 App」（其餘）；搜尋或篩選時合併成單一格。右鍵選單可加入／移除喜好項目、選開啟位置、App 資訊、強制停止、拷貝套件名稱、解除安裝。
+類似 Mac 新版啟動台：上方「開啟方式」下拉選單（獨立視窗／主螢幕）、全部／使用者／系統篩選、搜尋、App 圖示格（已開啟的下方有點）；沒有搜尋、篩選為「全部」時分區顯示：「喜好項目」（釘選，圖示有愛心標記）、「已開啟」（執行中但沒釘選）、「所有 App」（其餘）；搜尋或篩選時合併成單一格。右鍵選單可加入／移除喜好項目、選開啟位置、App 資訊、強制停止、拷貝套件名稱、解除安裝。
 
 ## Sources/PhoneCentre/MenuBar
 
 ### MenuBarController.swift
-選單列圖示，點開是 popover（大小跟著 SwiftUI 內容）：每台已連線裝置一區（名稱、型號、鏡像按鈕），下面一排 App 圖示（已開啟的下方有點、最近使用的沒有），點了依啟動台設定開啟；底部有開啟手機中心、設定、結束。
+選單列圖示，點開是 popover（大小跟著 SwiftUI 內容）：每台已連線裝置一區（名稱、型號、鏡像按鈕），下面一排 App 圖示（已開啟的下方有點、最近使用的沒有），點了依啟動台設定開啟；底部有開啟PhoneCentre、設定、結束。
 
 ## Sources/PhoneCentre/Remote
 

@@ -243,6 +243,7 @@ struct SideColumn: View {
     @Binding var showVideoSettings: Bool
     @Binding var showLocation: Bool
     @State private var showLauncher = false
+    @ObservedObject private var location = LocationSimulation.shared
 
     var body: some View {
         VStack(spacing: 8) {
@@ -290,7 +291,7 @@ struct SideColumn: View {
 
     private var navBar: some View {
         VStack(spacing: 1) {
-            NavButton(help: "畫質設定") { showVideoSettings.toggle() } icon: { sfIcon("dial.medium") }
+            NavButton(help: "畫質設定") { showVideoSettings.toggle() } icon: { sfIcon("environments.circle") }
                 .popover(isPresented: $showVideoSettings) {
                     VideoSettingsPopover(options: model.videoOptions) { model.applyVideoOptions($0) }
                 }
@@ -310,7 +311,9 @@ struct SideColumn: View {
                         MiniLauncher(catalog: catalog) { pkg in showLauncher = false; model.launch(pkg) }
                     }
             }
-            NavButton(help: "模擬定位") { showLocation = true } icon: { sfIcon("location") }
+            NavButton(help: location.isActive(model.device) ? "模擬定位（模擬中）" : "模擬定位") { showLocation = true } icon: {
+                sfIcon(location.isActive(model.device) ? "location.slash.fill" : "location")
+            }
             NavMenu(help: "聲音") { sfIcon("speaker.wave.2") } items: {
                 Button("音量 +") { model.key(KeyMap.volumeUp) }
                 Button("音量 −") { model.key(KeyMap.volumeDown) }

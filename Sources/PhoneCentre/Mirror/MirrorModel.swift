@@ -97,7 +97,7 @@ final class MirrorModel: ObservableObject {
     func start(handover: Bool = false) {
         userStopped = false
         retryTask?.cancel()
-        if !handover { statusText = "連線中…" }
+        if !handover { statusText = pendingStatus ?? "連線中…"; pendingStatus = nil }
         let s = AppSettings.shared
         var cfg = MirrorConfig()
         cfg.video = videoOptions
@@ -133,7 +133,10 @@ final class MirrorModel: ObservableObject {
         }
         session.onFrameSize = { [weak self, weak session] size in
             guard let self, let session, self.session === session else { return }
+            let old = self.frameSize
             self.frameSize = size
+            // 長寬比或解析度改變時，畫面會短暫黑屏到新畫面出現；先顯示提示
+            if old != .zero, old != size, self.statusText == nil { self.showChange("正在變更解析度…", seconds: 0.8) }
             self.view.setFrameSize(video: size)
             self.onFrameSize?(size)
         }
@@ -217,15 +220,16 @@ final class MirrorModel: ObservableObject {
         if abs(current.width - spec.px.width) < 16, abs(current.height - spec.px.height) < 16 { return }
         customDisplay = spec
         if displayId != nil, session?.state == .running {
+            showChange("正在調整視窗大小…", seconds: 8)
             start(handover: true)
         } else {
-            statusText = "調整大小中…"
+            pendingStatus = "正在調整視窗大小…"
             start()
         }
     }
 
     /// 虛擬顯示器旋轉：寬高對調
-    func rotateVirtualDisplay() { onRotateWindow?() }
+    func rotateVirtualDisplay() { showChange("正在變更方向…"); onRotateWindow?() }
 
     // MARK: 虛擬顯示器
 
@@ -368,7 +372,7 @@ final class MirrorModel: ObservableObject {
 
     private func handle(_ st: ScrcpySession.State) {
         switch st {
-        case .starting: if retiring == nil { statusText = "連線中…" }
+        case .starting: if retiring == nil, statusText == nil { statusText = "連線中…" }
         case .running:
             statusText = nil
             if isVirtualDisplay { Task { await finishConnect() } }
@@ -402,6 +406,20 @@ final class MirrorModel: ObservableObject {
         let ep = device.endpoint, serial = device.serial
         let text = try? await Task.detached { try AdbSocket.hostQuery(ep, "host:devices-l") }.value
         return Device.parse(text ?? "", endpoint: ep).contains { $0.serial == serial && $0.isOnline }
+    }
+
+    private var pendingStatus: String?
+    private var changeToken = 0
+
+    /// 畫質、解析度、方向、視窗大小變更時，黑屏期間顯示的提示（連線好了會自動消失，最久 `seconds` 秒）
+    func showChange(_ text: String, seconds: Double = 5) {
+        changeToken += 1
+        let token = changeToken
+        statusText = text
+        Task {
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            if changeToken == token, statusText == text { statusText = nil }
+        }
     }
 
     func restart() {
@@ -574,6 +592,7 @@ final class MirrorModel: ObservableObject {
 
     /// 鎖定方向：0 = 0°、1 = 90°、2 = 180°、3 = 270°
     func setRotation(_ r: Int) {
+        showChange("正在變更方向…")
         status.autoRotate = false
         status.userRotation = r
         let c = device.client
@@ -636,6 +655,7 @@ final class MirrorModel: ObservableObject {
     func applyVideoOptions(_ o: VideoOptions) {
         videoOptions = o
         AppSettings.shared.setVideoOptions(o, for: CacheManager.key(for: device))
+        pendingStatus = "正在變更畫質設定…"
         restart()
     }
 

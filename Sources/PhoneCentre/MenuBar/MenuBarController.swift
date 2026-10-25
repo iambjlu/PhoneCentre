@@ -62,7 +62,7 @@ struct MenuBarView: View {
                 Divider()
             }
             HStack {
-                Button("打開手機中心", action: openMain)
+                Button("打開PhoneCentre", action: openMain)
                 Spacer()
                 Button { openSettings() } label: { Image(systemName: "gearshape") }.help("設定")
                 Button { NSApp.terminate(nil) } label: { Image(systemName: "power") }.help("結束 PhoneCentre")

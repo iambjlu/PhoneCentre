@@ -51,7 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 720),
                              styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                              backing: .buffered, defer: false)
-            w.title = "手機中心"
+            w.title = "PhoneCentre"
             w.minSize = NSSize(width: 1020, height: 830)
             w.isReleasedWhenClosed = false
             // 標準視窗與標準元件：用最新 SDK 連結，系統會自動套用 Liquid Glass（側邊欄、工具列、分頁、按鈕）
@@ -102,7 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appMenu.addItem(.separator())
         if !ChildMode.isChild {
             appMenu.addItem(withTitle: "設定…", action: #selector(showSettings), keyEquivalent: ",").target = self
-            appMenu.addItem(withTitle: "顯示手機中心", action: #selector(showMainWindow), keyEquivalent: "0").target = self
+            appMenu.addItem(withTitle: "顯示PhoneCentre", action: #selector(showMainWindow), keyEquivalent: "0").target = self
             appMenu.addItem(.separator())
         }
         appMenu.addItem(withTitle: "隱藏", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")

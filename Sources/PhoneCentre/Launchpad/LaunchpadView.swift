@@ -101,7 +101,7 @@ struct LaunchpadView: View {
                 AppIconView(catalog: catalog, package: app.package, size: 64)
                     .shadow(color: .black.opacity(0.15), radius: 3, y: 1)
                 if settings.isPinned(app.package, on: device) {
-                    Image(systemName: "star.fill").font(.system(size: 9)).foregroundStyle(.white)
+                    Image(systemName: "heart.fill").font(.system(size: 9)).foregroundStyle(.white)
                         .padding(4).background(Circle().fill(Color.accentColor))
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                         .offset(x: 6, y: -4)
