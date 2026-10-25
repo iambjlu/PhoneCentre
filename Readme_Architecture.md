@@ -157,7 +157,8 @@ Mac 虛擬 keyCode（與鍵盤配置、輸入法無關）→ Android keycode；�
 - 調整視窗大小：先保留舊 session，用新大小另開 session（不帶 startApp），新顯示器就緒後以 `am display move-stack` 把舊顯示器的 root task 搬過去，再關舊 session，App 不會經過主螢幕；搬移失敗才退回重新啟動 App。
 - 關閉虛擬顯示器視窗（`MirrorWindowController.windowShouldClose`）：`sendAppsToBackground` 先把 App 搬到主螢幕，立刻 `am start --activity-reorder-to-front` 把主螢幕原本最上層的 Activity 拉回來，App 留在背景。
 - 啟動後 `ensureAppOnDisplay`：App 本來就在主螢幕（或別的顯示器）執行時，啟動指令可能只把原 task 叫到前面、新視窗是黑的；2.5 秒後顯示器上仍沒有 task，就用 `am stack list` 找到該 App 的 root task，`am display move-stack` 搬過來（找不到就重送 startApp，最多 3 次）。
-- 獨立視窗每 2 秒檢查顯示器上是否還有 root task（解析 `taskId=… rootTaskId=…` 行；連續兩次沒有才算），沒有就 `appClosed`，視窗顯示「XXX 已關閉」與「打開」按鈕。
+- 切換顯示器後（搬移 task、重新開啟）呼叫 `nudgeDisplayConfig`：`wm density` 加 1 再改回，觸發一次螢幕設定變更讓 App 重新排版，避免跑版。
+- 獨立視窗每 2 秒檢查顯示器上是否還有 root task（解析 `taskId=… rootTaskId=…` 行；連續兩次沒有才算），沒有就 `appClosed`，視窗顯示「XXX 已關閉」與「打開」按鈕，背景是最後一張不是全黑的關鍵幀（`VideoDecoder.lastGoodFrame`，每個關鍵幀解碼一次，只有獨立視窗開啟）霧化後的畫面。
 - 獨立視窗的導覽：主畫面＝隱藏視窗、多工＝強制停止 App 並關閉視窗；桌面模式的主畫面／多工送 `input -d <id> keyevent` 給該桌面。
 - 導覽動作：主螢幕鏡像走 scrcpy 按鍵；虛擬顯示器上返回用 `input -d <id> keyevent`，主畫面（單一 App 視窗）改成重新啟動該 App 的首頁，多工改為選單切換同一視窗的 App，截圖用 `screencap -d`，旋轉改為視窗寬高對調並重建顯示器。旋轉選單（主螢幕）另可鎖定直向／橫向／自動旋轉（`settings put system`）。
 - 虛擬顯示器大小：像素 = 視窗點數 × Mac 螢幕的 backing scale（非 Retina 就是 1:1），密度 160 × scale，讓 1 個 Mac 點約等於 1 個 Android dp；長寬取 8 的倍數（無條件捨去，不超過視窗）；受「最大解析度」限制。放開視窗邊框時依新大小重建虛擬顯示器（`resizeVirtualDisplay`）。
@@ -168,7 +169,7 @@ Mac 虛擬 keyCode（與鍵盤配置、輸入法無關）→ Android keycode；�
 手機狀態：一次 shell 取得 `dumpsys battery`（電量、是否接電）、`dumpsys connectivity`（預設網路是 Wi-Fi 還是 MOBILE[LTE] → 4G/5G）、`dumpsys telephony.registry`（有資料連線的那張 SIM，否則第一張；訊號 level 0–4、是否有服務）、`gsm.sim.state`。`MirrorModel` 每 5 秒更新；另含 Wi-Fi RSSI（格數）、自動旋轉與目前鎖定方向。
 
 ### NavBar.swift
-右側欄 `SideColumn`：整條是深色毛玻璃底（`GlassBackground`，視窗透明，桌面透出來），上面疊兩塊圓角液態玻璃面板（`liquidPanel`，macOS 26 用 `glassEffect`＋`GlassEffectContainer`，舊系統用材質）：App 列一塊（釘選＋執行中，高度跟圖示數量，放得下就剛好包住，放不下才捲動；沒有圖示就不畫）、導覽列一塊（獨立視窗沒有 App 列）。上方 `StatusIndicator`（外環＝電池，分左右兩段、上方留給電量數字（不加 %）、充電為綠色、≤20% 紅色；中間是較大的 Wi-Fi（依 RSSI 格數）或 4G/5G；訊號格是排在電池環下方缺口、同一個圓上的 4 個點（點與點、點與環端的角度間隔相同）；電量數字壓在環頂端缺口的正中間，不與環重疊；點與環一起在同一個 Canvas 繪製，大小一致，格數取自三星 `SignalBarInfo`），中間 App 列（獨立視窗沒有），下方導覽列。導覽列由上到下（最下面三顆依序是返回、主畫面、多工）：畫質設定、輸入方式（選單，`keyboard`＝實體按鍵、`keyboard.fill`＝Mac 輸入法）、桌面模式的啟動台、模擬定位、聲音（選單）、截圖、旋轉（選單：四個角度的 iPhone 圖示與自動旋轉開關；獨立視窗是旋轉視窗方向）、黑屏與電源（只有主螢幕）、返回、主畫面、多工。獨立視窗的主畫面是「隱藏視窗」（`xmark.square`；視窗 `orderOut`，連線與虛擬顯示器繼續，App 留在原顯示器；從 App 列再開或點 Dock 圖示叫回來）、多工是「強制停止並關閉視窗」（六角形加叉）。多工「|||」、主畫面（圓角方形）、返回「<」是仿 One UI 的自繪圖示。`glassCard` 是疊在畫面上所有東西（提示、橫幅、已關閉卡片）共用的毛玻璃底。
+右側欄 `SideColumn`：整條是深色毛玻璃底（`GlassBackground`，視窗透明，桌面透出來），上面疊兩塊圓角液態玻璃面板（`liquidPanel`，macOS 26 用 `glassEffect`＋`GlassEffectContainer`，舊系統用材質）：App 列一塊（釘選＋執行中，高度跟圖示數量，放得下就剛好包住，放不下才捲動；沒有圖示就不畫）、導覽列一塊（獨立視窗沒有 App 列）。上方 `StatusIndicator`（外環＝電池，分左右兩段、上方留給電量數字（不加 %）、充電為綠色、≤20% 紅色；中間是較大的 Wi-Fi（依 RSSI 格數）或 4G/5G；訊號格是排在電池環下方缺口、同一個圓上的 4 個點（點與點、點與環端的角度間隔相同）；點一下狀態環（主螢幕）會降下通知中心；電量數字壓在環頂端缺口的正中間，不與環重疊；點與環一起在同一個 Canvas 繪製，大小一致，格數取自三星 `SignalBarInfo`），中間 App 列（獨立視窗改在欄位正中間顯示目前 App 的圖示與名稱），下方導覽列。導覽列由上到下（最下面三顆依序是返回、主畫面、多工）：畫質設定、輸入方式（選單，`keyboard`＝實體按鍵、`keyboard.fill`＝Mac 輸入法）、桌面模式的啟動台、模擬定位、聲音（選單）、截圖、旋轉（選單：四個角度的 iPhone 圖示與自動旋轉開關；獨立視窗是旋轉視窗方向）、黑屏與電源（只有主螢幕）、返回、主畫面、多工。獨立視窗的主畫面是「隱藏視窗」（`xmark.square`；視窗 `orderOut`，連線與虛擬顯示器繼續，App 留在原顯示器；從 App 列再開或點 Dock 圖示叫回來）、多工是「強制停止並關閉視窗」（六角形加叉）。多工「|||」、主畫面（圓角方形）、返回「<」是仿 One UI 的自繪圖示。`glassCard` 是疊在畫面上所有東西（提示、橫幅、已關閉卡片）共用的毛玻璃底。
 
 ### LocationSimulator.swift
 模擬定位：`LocationSimulatorSheet` 用 MapKit 地圖（點選或搜尋）選位置，經由 `cmd location providers add-test-provider／set-test-provider-location`（gps 與 network，先以 `appops` 允許 shell 的 MOCK_LOCATION）讓手機採用；「停止模擬」移除測試提供者。

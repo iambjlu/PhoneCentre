@@ -53,7 +53,7 @@ struct StatusIndicator: View {
     }
 
     // 角度：SwiftUI 由 3 點鐘方向順時針量起（270° = 正上方，90° = 正下方）
-    private let segments: [(Double, Double)] = [(145, 238), (302, 395)]
+    private let segments: [(Double, Double)] = [(145, 232), (308, 395)]
 
     var body: some View {
         ZStack {
@@ -247,9 +247,24 @@ struct SideColumn: View {
     var body: some View {
         VStack(spacing: 8) {
             StatusIndicator(status: model.status)
+                .contentShape(Rectangle())
+                // 主螢幕：點狀態環降下通知中心
+                .onTapGesture { if !model.isVirtualDisplay { model.session?.send(.expandNotifications) } }
             glassGroup {
                 VStack(spacing: 8) {
-                    if model.isAppWindow {
+                    if model.isAppWindow, let pkg = model.appPackage {
+                        // 獨立視窗：在欄位正中間顯示目前的 App
+                        Spacer(minLength: 0)
+                        VStack(spacing: 6) {
+                            AppIconView(catalog: catalog, package: pkg, size: 38)
+                            Text(model.appLabel ?? catalog.label(for: pkg))
+                                .font(.system(size: 10, weight: .medium))
+                                .lineLimit(2).multilineTextAlignment(.center)
+                                .foregroundStyle(.white.opacity(0.9))
+                        }
+                        .padding(.vertical, 10).padding(.horizontal, 4)
+                        .frame(maxWidth: .infinity)
+                        .liquidPanel()
                         Spacer(minLength: 0)
                     } else {
                         AppRail(catalog: catalog) { pkg in model.launch(pkg) }

@@ -34,8 +34,13 @@ final class MirrorModel: ObservableObject {
     /// 由視窗控制器提供：隱藏這個視窗（連線與虛擬顯示器繼續，App 還在原本的顯示器上）
     var onHideWindow: (() -> Void)?
     /// 獨立視窗的 App 在手機上被關掉了（例如在主螢幕滑掉）
-    @Published var appClosed = false
+    @Published var appClosed = false {
+        didSet { if appClosed, !oldValue { closedSnapshot = session?.decoder.lastGoodFrame } }
+    }
+    /// App 被關掉時顯示的最後一幀（毛玻璃霧化）
+    @Published var closedSnapshot: NSImage?
     private var appSeen = false
+    private var lastSnapshotRequest = Date.distantPast
     private var emptyChecks = 0
     /// 這個視窗的虛擬顯示器 id（主螢幕鏡像為 nil）
     private(set) var displayId: Int?
@@ -115,6 +120,7 @@ final class MirrorModel: ObservableObject {
             hadOld = detachCurrentSession()
         }
         let session = ScrcpySession(device: device, config: cfg)
+        session.decoder.keepLastFrame = isAppWindow
         session.onState = { [weak self, weak session] st in
             guard let self, let session, self.session === session else { return }
             self.handle(st)
@@ -228,11 +234,25 @@ final class MirrorModel: ObservableObject {
             for task in await rootTasks(onDisplay: from) {
                 _ = try? await device.client.shell("am display move-stack \(task) \(to)")
             }
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            await nudgeDisplayConfig(to)
         } else if let app = appPackage {
             session?.send(.startApp(app))
         }
         try? await Task.sleep(nanoseconds: 400_000_000)
         old.session.stop()
+    }
+
+    /// 讓虛擬顯示器上的 App 重新排版：把密度加 1 再改回來，等於觸發一次螢幕設定變更。
+    /// App 在主螢幕與獨立視窗間切換後常停在舊的版面（跑版），這樣就會重繪。
+    private func nudgeDisplayConfig(_ d: Int) async {
+        let c = device.client
+        let out = (try? await c.shell("wm density -d \(d)")) ?? ""
+        guard let line = out.split(separator: "\n").last(where: { $0.contains("density:") }),
+              let dpi = Int(line.split(separator: ":").last?.trimmingCharacters(in: .whitespaces) ?? "") else { return }
+        _ = try? await c.shell("wm density \(dpi + 1) -d \(d)")
+        try? await Task.sleep(nanoseconds: 250_000_000)
+        _ = try? await c.shell("wm density \(dpi) -d \(d)")
     }
 
     /// 啟動後確認 App 真的在這個顯示器上。App 已經在主螢幕（或別的顯示器）執行時，
@@ -241,7 +261,7 @@ final class MirrorModel: ObservableObject {
         for _ in 0..<3 {
             try? await Task.sleep(nanoseconds: 2_500_000_000)
             guard retiring == nil, !userStopped, displayId == display else { return }
-            if !(await rootTasks(onDisplay: display)).isEmpty { return }
+            if !(await rootTasks(onDisplay: display)).isEmpty { await nudgeDisplayConfig(display); return }
             let out = (try? await device.client.shell("am stack list | grep -E '^RootTask id=|taskId='", timeout: 10)) ?? ""
             var root: Int?, rootDisplay: Int?
             var found: Int?
@@ -255,6 +275,8 @@ final class MirrorModel: ObservableObject {
             }
             if let found {
                 _ = try? await device.client.shell("am display move-stack \(found) \(display)")
+                try? await Task.sleep(nanoseconds: 600_000_000)
+                await nudgeDisplayConfig(display)
             } else {
                 session?.send(.startApp(pkg))
             }
@@ -433,7 +455,16 @@ final class MirrorModel: ObservableObject {
     private func checkAppAlive() async {
         guard retiring == nil, session?.state == .running, let d = displayId else { return }
         let empty = await rootTasks(onDisplay: d).isEmpty
-        if !empty { appSeen = true; emptyChecks = 0; if appClosed { appClosed = false }; return }
+        if !empty {
+            appSeen = true; emptyChecks = 0
+            if appClosed { appClosed = false; closedSnapshot = nil }
+            // 畫面靜止時編碼器不會產生新的關鍵幀，所以定期要一張，App 被關掉時才有最後一幀可以霧化
+            if Date().timeIntervalSince(lastSnapshotRequest) > 6 {
+                lastSnapshotRequest = Date()
+                session?.send(.resetVideo)
+            }
+            return
+        }
         emptyChecks += 1
         if appSeen, emptyChecks >= 2, !appClosed { appClosed = true }
     }
@@ -444,6 +475,7 @@ final class MirrorModel: ObservableObject {
         appSeen = false
         emptyChecks = 0
         session?.send(.startApp(app))
+        if let d = displayId { Task { try? await Task.sleep(nanoseconds: 1_500_000_000); await nudgeDisplayConfig(d) } }
     }
 
     private func refreshStatus() async {

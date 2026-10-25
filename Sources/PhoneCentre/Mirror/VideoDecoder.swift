@@ -28,27 +28,49 @@ final class VideoDecoder {
         }
     }
 
-    private func finishCapture(sample: CMSampleBuffer, format: CMVideoFormatDescription) {
+    /// 最近一張「不是全黑」的關鍵幀（App 被關掉時拿來當霧化背景）。只有 keepLastFrame 開啟時才解碼。
+    var keepLastFrame = false
+    private(set) var lastGoodFrame: NSImage?
+
+    private func decode(_ sample: CMSampleBuffer, _ format: CMVideoFormatDescription) -> CGImage? {
+        var session: VTDecompressionSession?
+        guard VTDecompressionSessionCreate(allocator: nil, formatDescription: format, decoderSpecification: nil,
+                                           imageBufferAttributes: nil, outputCallback: nil,
+                                           decompressionSessionOut: &session) == noErr, let session else { return nil }
+        var result: CGImage?
+        let status = VTDecompressionSessionDecodeFrame(session, sampleBuffer: sample, flags: [], infoFlagsOut: nil) { st, _, image, _, _ in
+            guard st == noErr, let image else { return }
+            let ci = CIImage(cvPixelBuffer: image)
+            result = CIContext().createCGImage(ci, from: ci.extent)
+        }
+        if status == noErr { VTDecompressionSessionWaitForAsynchronousFrames(session) }
+        VTDecompressionSessionInvalidate(session)
+        return result
+    }
+
+    private static func isBlack(_ cg: CGImage) -> Bool {
+        var px = [UInt8](repeating: 0, count: 16 * 16 * 4)
+        guard let ctx = CGContext(data: &px, width: 16, height: 16, bitsPerComponent: 8, bytesPerRow: 64,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+        ctx.interpolationQuality = .low
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: 16, height: 16))
+        return !stride(from: 0, to: px.count, by: 4).contains { px[$0] > 6 || px[$0 + 1] > 6 || px[$0 + 2] > 6 }
+    }
+
+    private func handleKeyFrame(sample: CMSampleBuffer, format: CMVideoFormatDescription) {
         captureLock.lock()
         let h = captureHandler
         captureHandler = nil
         captureLock.unlock()
-        guard let h else { return }
-        var session: VTDecompressionSession?
-        guard VTDecompressionSessionCreate(allocator: nil, formatDescription: format, decoderSpecification: nil,
-                                           imageBufferAttributes: nil, outputCallback: nil,
-                                           decompressionSessionOut: &session) == noErr, let session else { h(nil); return }
-        var png: Data?
-        let status = VTDecompressionSessionDecodeFrame(session, sampleBuffer: sample, flags: [], infoFlagsOut: nil) { st, _, image, _, _ in
-            guard st == noErr, let image else { return }
-            let ci = CIImage(cvPixelBuffer: image)
-            if let cg = CIContext().createCGImage(ci, from: ci.extent) {
-                png = NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:])
-            }
+        guard h != nil || keepLastFrame else { return }
+        let cg = decode(sample, format)
+        if let h {
+            h(cg.flatMap { NSBitmapImageRep(cgImage: $0).representation(using: .png, properties: [:]) })
         }
-        if status == noErr { VTDecompressionSessionWaitForAsynchronousFrames(session) }
-        VTDecompressionSessionInvalidate(session)
-        h(png)
+        if keepLastFrame, let cg, !Self.isBlack(cg) {
+            lastGoodFrame = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+        }
     }
 
     /// 依 00 00 01 / 00 00 00 01 起始碼切出 NAL units
@@ -150,7 +172,7 @@ final class VideoDecoder {
             a[kCMSampleAttachmentKey_DisplayImmediately] = true
             if !keyFrame { a[kCMSampleAttachmentKey_NotSync] = true }
         }
-        if keyFrame { finishCapture(sample: sample, format: format) }
+        if keyFrame { handleKeyFrame(sample: sample, format: format) }
         let changed = formatChanged
         formatChanged = false
         enqueue?(sample, changed)
