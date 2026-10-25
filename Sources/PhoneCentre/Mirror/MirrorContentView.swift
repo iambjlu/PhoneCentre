@@ -316,6 +316,7 @@ struct LockPasswordSheet: View {
             Text("「\(device.displayName)」的解鎖密碼").font(.headline)
             Text("密碼會存在這台 Mac 的鑰匙圈。偵測到手機在鎖定畫面時，可用 Touch ID 驗證後自動填入。")
                 .font(.callout).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             Picker("", selection: $usePattern) {
                 Text("PIN／密碼").tag(false)
                 Text("圖形").tag(true)
