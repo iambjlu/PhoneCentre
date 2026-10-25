@@ -6,6 +6,7 @@ struct DeviceOverview: View {
     @State private var battery = ""
     @State private var storage = ""
     @State private var showPassword = false
+    @State private var showSerial = false
     @State private var message = ""
     @State private var dropTargeted = false
 
@@ -17,7 +18,7 @@ struct DeviceOverview: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(device.displayName).font(.title.bold())
                         Text(device.subtitle).foregroundStyle(.secondary)
-                        Text(device.isRemote ? "透過遠端 PhoneCentre" : (device.isWireless ? "無線 · \(device.serial)" : "USB · \(device.serial)"))
+                        Text(device.isRemote ? "透過遠端 PhoneCentre" : (device.isWireless ? "無線" : "USB") + (showSerial ? " · \(device.serial)" : ""))
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
@@ -38,7 +39,13 @@ struct DeviceOverview: View {
                         row("螢幕", device.info.map { "\($0.screenSize) · \($0.density) dpi" } ?? "—")
                         row("電池", battery.isEmpty ? "—" : battery)
                         row("儲存空間", storage.isEmpty ? "—" : storage)
-                        row("序號", device.info?.serialNo ?? device.serial)
+                        HStack(alignment: .top) {
+                            Text("序號").foregroundStyle(.secondary).frame(width: 80, alignment: .leading)
+                            Text(showSerial ? (device.info?.serialNo ?? device.serial) : "••••••••••").textSelection(.enabled)
+                            Button { showSerial.toggle() } label: { Image(systemName: showSerial ? "eye.slash" : "eye") }
+                                .buttonStyle(.plain).foregroundStyle(.secondary)
+                                .help(showSerial ? "隱藏序號" : "顯示序號")
+                        }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(4)
