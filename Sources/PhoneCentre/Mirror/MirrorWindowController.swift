@@ -29,6 +29,21 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
         window.isOpaque = false
         window.backgroundColor = .clear
         window.contentView = NSHostingView(rootView: MirrorContentView(model: model))
+        // 標題列與右側欄後面的底：只在這兩塊鋪桌面模糊（毛玻璃），手機畫面區域是黑底、不鋪，省渲染資源
+        if let theme = window.contentView?.superview, let content = window.contentView {
+            func strip(_ frame: NSRect, _ mask: NSView.AutoresizingMask) {
+                let blur = NSVisualEffectView(frame: frame)
+                blur.material = .underWindowBackground
+                blur.blendingMode = .behindWindow
+                blur.state = .active
+                blur.autoresizingMask = mask
+                theme.addSubview(blur, positioned: .below, relativeTo: content)
+            }
+            let tb = theme.bounds.height - content.frame.height
+            strip(NSRect(x: 0, y: content.frame.maxY, width: theme.bounds.width, height: tb), [.width, .minYMargin])
+            strip(NSRect(x: theme.bounds.width - MirrorLayout.railWidth, y: 0, width: MirrorLayout.railWidth, height: theme.bounds.height),
+                  [.minXMargin, .height])
+        }
         window.tabbingMode = .disallowed
         window.contentMinSize = NSSize(width: 240 + MirrorLayout.railWidth, height: MirrorLayout.minContentHeight)
         window.setFrameAutosaveName("Mirror.\(model.device.id).\(model.appPackage ?? (model.desktopMode ? "desktop" : "main"))")
