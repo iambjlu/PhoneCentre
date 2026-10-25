@@ -215,3 +215,17 @@ final class AppCatalog: ObservableObject {
         _ = try? await device.client.shell("am start -a android.settings.APPLICATION_DETAILS_SETTINGS -d package:\(pkg)")
     }
 }
+
+extension AppCatalog {
+    /// App 列、總覽、啟動台共用的排序：已開啟的在前（目前在最上層的 → 已開啟的喜好項目 → 其他已開啟的），
+    /// 還沒開的喜好項目在後（兩組中間畫分隔線）
+    func barOrder(pins: [String]) -> (opened: [String], unopened: [String]) {
+        let cur = foreground
+        let run = running
+        let opened = (cur.map { [$0] } ?? [])
+            + pins.filter { run.contains($0) && $0 != cur }
+            + run.filter { !pins.contains($0) && $0 != cur }
+        let unopened = pins.filter { !run.contains($0) && $0 != cur }
+        return (opened, unopened)
+    }
+}

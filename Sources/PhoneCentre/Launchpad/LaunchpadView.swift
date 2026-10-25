@@ -35,11 +35,7 @@ struct LaunchpadView: View {
     @State private var query = ""
     @State private var confirmUninstall: AppEntry?
 
-    /// 已開啟的喜好項目排前面，還沒開的接在後面
-    private var pins: [String] {
-        let p = settings.pinned(for: device)
-        return p.filter { catalog.running.contains($0) } + p.filter { !catalog.running.contains($0) }
-    }
+    private var pins: [String] { settings.pinned(for: device) }
 
     private func entries(_ pkgs: [String]) -> [AppEntry] {
         pkgs.compactMap { p in catalog.apps.first { $0.package == p } }
@@ -105,15 +101,18 @@ struct LaunchpadView: View {
     /// 沒有搜尋時：喜好項目、已開啟、依索引分組的所有 App，右邊有 A–Z／ㄅ–ㄦ 索引列可以快速跳轉
     private var content: some View {
         ScrollViewReader { proxy in
-            let pinnedApps = entries(pins)
-            let openApps = entries(catalog.running.filter { !pins.contains($0) })
+            // 排序與 App 列相同：已開啟的在前，分隔線之後才是還沒開的喜好項目
+            let order = catalog.barOrder(pins: pins)
+            let openApps = entries(order.opened)
+            let pinnedApps = entries(order.unopened)
             let taken = Set(pinnedApps.map(\.package) + openApps.map(\.package))
             let groups = grouped(filteredApps.filter { query.isEmpty ? !taken.contains($0.package) : true })
             ScrollView {
                 VStack(alignment: .leading, spacing: 26) {
                     if query.isEmpty {
-                        section("喜好項目", pinnedApps)
-                        section("已開啟", openApps)
+                        section(nil, openApps)
+                        if !openApps.isEmpty && !pinnedApps.isEmpty { GlassDivider(opacity: 0.25).padding(.vertical, -6) }
+                        section(nil, pinnedApps)
                         if !groups.isEmpty, !(pinnedApps.isEmpty && openApps.isEmpty) {
                             Text("所有 App").font(.headline).foregroundStyle(.secondary).padding(.bottom, -12)
                         }
@@ -191,12 +190,10 @@ struct LaunchpadView: View {
         .contextMenu { menu(app) }
     }
 
+    /// 選單順序與 App 列相同：強制停止、在獨立視窗開啟在最上面，動到喜好項目的放最下面
     @ViewBuilder
     private func menu(_ app: AppEntry) -> some View {
-        Button(settings.isPinned(app.package, on: device) ? "移除喜好項目" : "加入喜好項目") {
-            settings.togglePin(app.package, on: device)
-        }
-        Divider()
+        Button("強制停止") { Task { await catalog.forceStop(app.package) } }
         Button("在獨立視窗開啟") { WindowManager.shared.openApp(device, package: app.package) }
         Button("在手機主螢幕開啟") {
             Task { await catalog.launch(app.package) }
@@ -204,12 +201,14 @@ struct LaunchpadView: View {
         }
         Divider()
         Button("在手機上顯示 App 資訊") { Task { await catalog.openAppInfo(app.package) } }
-        Button("強制停止") { Task { await catalog.forceStop(app.package) } }
         Button("拷貝套件名稱") {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(app.package, forType: .string)
         }
-        Divider()
         Button("解除安裝…", role: .destructive) { confirmUninstall = app }
+        Divider()
+        Button(settings.isPinned(app.package, on: device) ? "移除喜好項目" : "加入喜好項目") {
+            settings.togglePin(app.package, on: device)
+        }
     }
 }

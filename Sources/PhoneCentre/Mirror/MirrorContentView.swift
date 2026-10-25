@@ -157,16 +157,9 @@ struct AppRail: View {
     }
 
     /// 第一個是目前在手機畫面最上層的 App；接著像 Mac Dock：使用者釘選的 App 一直在，執行中但沒釘選的接在分隔線後面
-    private var current: String? { catalog.foreground }
-    private var allPins: [String] { settings.pinned(for: catalog.device) }
-    /// 已開啟的排前面：目前的 App → 已開啟的喜好項目 → 其他已開啟的；還沒開的喜好項目全部放最後（分隔線之後），才不會和已開啟的混在一起
-    private var opened: [String] {
-        let running = catalog.running
-        return (current.map { [$0] } ?? [])
-            + allPins.filter { running.contains($0) && $0 != current }
-            + running.filter { !allPins.contains($0) && $0 != current }
-    }
-    private var unopenedPins: [String] { allPins.filter { !catalog.running.contains($0) && $0 != current } }
+    private var order: (opened: [String], unopened: [String]) { catalog.barOrder(pins: settings.pinned(for: catalog.device)) }
+    private var opened: [String] { order.opened }
+    private var unopenedPins: [String] { order.unopened }
 
     private var iconList: some View {
         VStack(spacing: 10) {

@@ -190,18 +190,11 @@ struct PinnedAppsStrip: View {
     @ObservedObject var catalog: AppCatalog
     @ObservedObject private var settings = AppSettings.shared
 
-    /// 已開啟的喜好項目排前面，還沒開的接在後面
-    private var pins: [String] {
-        let p = settings.pinned(for: device)
-        return p.filter { catalog.running.contains($0) } + p.filter { !catalog.running.contains($0) }
-    }
-    private var openOnly: [String] { catalog.running.filter { !pins.contains($0) } }
+    private var order: (opened: [String], unopened: [String]) { catalog.barOrder(pins: settings.pinned(for: device)) }
 
+    /// 排序與 App 列相同：已開啟的在前，分隔線之後才是還沒開的喜好項目
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            row("喜好項目", pins)
-            row("已開啟", openOnly)
-        }
+        iconRow(order.opened, order.unopened)
         .task(id: device.id) {
             if catalog.apps.isEmpty { await catalog.reload() }
             // 定時更新，已開啟與「目前在用」的標記才會跟著手機變
@@ -212,31 +205,43 @@ struct PinnedAppsStrip: View {
         }
     }
 
-    @ViewBuilder private func row(_ title: String, _ packages: [String]) -> some View {
-        if !packages.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(title).font(.headline).foregroundStyle(.secondary)
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 16) {
-                        ForEach(packages, id: \.self) { pkg in
-                            VStack(spacing: 5) {
-                                AppIconView(catalog: catalog, package: pkg, size: 52)
-                                    .shadow(color: .black.opacity(0.15), radius: 3, y: 1)
-                                Text(catalog.label(for: pkg)).font(.caption).lineLimit(1).frame(width: 72)
-                                RunningMark(running: catalog.running.contains(pkg), current: pkg == catalog.foreground)
-                            }
-                            .contentShape(Rectangle())
-                            .onTapGesture { WindowManager.shared.launch(device, package: pkg) }
-                            .contextMenu {
-                                Button(settings.isPinned(pkg, on: device) ? "移除喜好項目" : "加入喜好項目") { settings.togglePin(pkg, on: device) }
-                                Button("在獨立視窗開啟") { WindowManager.shared.openApp(device, package: pkg) }
-                                Button("強制停止") { Task { await catalog.forceStop(pkg) } }
-                            }
-                        }
+    @ViewBuilder private func iconRow(_ opened: [String], _ unopened: [String]) -> some View {
+        if !opened.isEmpty || !unopened.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 16) {
+                    ForEach(opened, id: \.self) { icon($0) }
+                    if !opened.isEmpty && !unopened.isEmpty {
+                        Rectangle().fill(Color.primary.opacity(0.3)).frame(width: 1, height: 56)
                     }
-                    .padding(.vertical, 4)
+                    ForEach(unopened, id: \.self) { icon($0) }
+                }
+                .padding(.vertical, 4)
+            }
+        }
+    }
+
+    private func icon(_ pkg: String) -> some View {
+        VStack(spacing: 5) {
+            ZStack(alignment: .topTrailing) {
+                AppIconView(catalog: catalog, package: pkg, size: 52)
+                    .shadow(color: .black.opacity(0.15), radius: 3, y: 1)
+                if settings.isPinned(pkg, on: device) {
+                    Image(systemName: "heart.fill").font(.system(size: 8)).foregroundStyle(.white)
+                        .padding(3).background(Circle().fill(Color.accentColor))
+                        .offset(x: 5, y: -3)
                 }
             }
+            Text(catalog.label(for: pkg)).font(.caption).lineLimit(1).frame(width: 72)
+            RunningMark(running: catalog.running.contains(pkg), current: pkg == catalog.foreground)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { WindowManager.shared.launch(device, package: pkg) }
+        // 選單順序與 App 列相同：強制停止、在獨立視窗開啟、（分隔線）喜好項目
+        .contextMenu {
+            Button("強制停止") { Task { await catalog.forceStop(pkg) } }
+            Button("在獨立視窗開啟") { WindowManager.shared.openApp(device, package: pkg) }
+            Divider()
+            Button(settings.isPinned(pkg, on: device) ? "移除喜好項目" : "加入喜好項目") { settings.togglePin(pkg, on: device) }
         }
     }
 }
