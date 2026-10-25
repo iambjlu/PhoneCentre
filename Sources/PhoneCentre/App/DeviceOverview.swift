@@ -67,6 +67,7 @@ struct DeviceOverview: View {
             }
             .padding(24)
             .frame(maxWidth: 760, alignment: .leading)
+            .frame(maxWidth: .infinity)   // 捲動內容撐滿寬度，工具列後面的邊緣效果才不會只有 760 寬一塊
         }
         .task(id: device.id) { await loadStatus() }
         .sheet(isPresented: $showPassword) { LockPasswordSheet(device: device) }

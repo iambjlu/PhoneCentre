@@ -166,7 +166,7 @@ struct MainView: View {
                     case .files: FileBrowserView(device: d).id(d.id)
                     case .photos: CameraRollView(device: d).id(d.id)
                     }
-                }
+                }                .softScrollEdge()
                 .navigationTitle(d.displayName)
                 .navigationSubtitle(d.subtitle)
                 .toolbar {
@@ -250,5 +250,12 @@ struct AdbSetupView: View {
         }
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+extension View {
+    /// 內容捲到工具列下面時用柔和的淡出（預設的硬邊會在工具列後面出現一塊長方形底板）
+    @ViewBuilder func softScrollEdge() -> some View {
+        if #available(macOS 26.0, *) { self.scrollEdgeEffectStyle(.soft, for: .top).scrollEdgeEffectHidden(true, for: .top) } else { self }
     }
 }
