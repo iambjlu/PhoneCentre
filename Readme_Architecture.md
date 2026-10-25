@@ -72,7 +72,7 @@ Sources/PhoneCentre/           Swift 原始碼（下面各章節；PhoneData 為
 - `DockLauncher`：在 `~/Library/Application Support/PhoneCentre/Launchers/` 用 APFS clone（`cp -c`）複製一份 .app，改 `CFBundleIdentifier`／`CFBundleName` 後 ad-hoc 重新簽章，再以 `NSWorkspace.openApplication` 帶參數啟動；同一個鍵（裝置＋App）已在執行就直接切過去。主程式更新後副本會重建。複製後會清掉隔離屬性（`xattr -cr`，主程式從別台電腦／AirDrop 來時，帶著隔離屬性的副本會被 Gatekeeper 擋下），簽章失敗會報錯；啟動失敗時重建副本再試一次，仍失敗才改在主程式開視窗。標題中的特殊字元會替換成 `-`。
 
 ### MainView.swift
-主視窗（工具列：隱藏系統標題，由 `DeviceToolbar` 在 `principal` 項目裡用 `TitleTabsLayout` 自己排版；這一條的寬度跟內容區（側邊欄以外，用 `onGeometryChange` 量）一樣，裝置名稱與副標題靠左，分頁選擇器空間夠時置中，被名稱擠到才往右移，名稱放不下才截斷）：標準的 `NavigationSplitView`，分頁是放在工具列的原生分段選擇器；用最新 SDK 連結後由系統自動套用 Liquid Glass（圓角視窗、側邊欄、工具列按鈕、分頁藥丸）。視窗透明，最底層墊一層 `NSVisualEffectView`（`.underWindowBackground`）當毛玻璃底，SwiftUI 內容不加自訂底色。
+主視窗（最小寬度 1160，工具列：隱藏系統標題，由 `DeviceToolbar` 在 `principal` 項目裡用 `TitleTabsLayout` 自己排版；這一條的寬度跟內容區（側邊欄以外，用 `onGeometryChange` 量）一樣，裝置名稱與副標題靠左，分頁選擇器空間夠時置中，被名稱擠到才往右移，名稱放不下才截斷）：標準的 `NavigationSplitView`，分頁是放在工具列的原生分段選擇器；用最新 SDK 連結後由系統自動套用 Liquid Glass（圓角視窗、側邊欄、工具列按鈕、分頁藥丸）。視窗透明，最底層墊一層 `NSVisualEffectView`（`.underWindowBackground`）當毛玻璃底，SwiftUI 內容不加自訂底色。
 - 側邊欄：本機裝置（選中的列底色是強調色，`DeviceRow` 由 MainView 傳入是否選中（並參考 `backgroundProminence`）把圖示改白、狀態燈外加白色細環，避免和底色糊在一起）、記住但目前離線的無線裝置（右鍵可立即重連或忘記）、各遠端 PhoneCentre 的裝置（每區標題有連線狀態燈與選單：重新連線、編輯、移除；沒有裝置時顯示狀態與「重新連線」按鈕）；底部顯示 adb server 狀態與最近事件。
 - 內容：分頁「總覽／啟動台／檔案／通知／簡訊／通話記錄／相機膠卷」；找不到 adb 時顯示 `AdbSetupView`（一鍵下載 Google Platform-Tools）。
 
@@ -81,7 +81,7 @@ Sources/PhoneCentre/           Swift 原始碼（下面各章節；PhoneData 為
 - 遠端 PhoneCentre：新增主機（名稱、主機、port、密碼）、Bonjour（`_phonecentre._tcp`）瀏覽區域網路上的 PhoneCentre、管理已加入的主機（重連、編輯 `RemoteHostEditSheet`、移除）。
 
 ### DeviceOverview.swift
-裝置總覽：標題旁的手機圖示點一下就開鏡像畫面；最上面是 `PinnedAppsStrip`（「喜好項目」與「已開啟」各自獨立一排，點了依啟動台設定開啟，右鍵可加入／移除喜好項目）、鏡像畫面、桌面模式(Beta)、安裝 APK、設定解鎖密碼、裝置資訊（型號、Android 版本、螢幕、電池、儲存空間、序號；序號預設隱藏（標題旁的 USB／無線位址照常顯示），按眼睛按鈕顯示／隱藏）、拖放區（APK 安裝；照片影片存相機膠卷；其他存「下載項目」＝手機的 `/sdcard/Download`）。
+裝置總覽：標題旁的手機圖示點一下就開鏡像畫面；最上面是 `PinnedAppsStrip`（「喜好項目」與「已開啟」各自獨立一排，點了依啟動台設定開啟，右鍵可加入／移除喜好項目）、鏡像畫面、桌面模式(Beta)、安裝 APK、設定解鎖密碼、裝置資訊（內容比標題再往右縮排一點；型號、Android 版本、螢幕、電池、儲存空間、序號；序號預設隱藏（標題旁的 USB／無線位址照常顯示），按眼睛按鈕顯示／隱藏）、拖放區（APK 安裝；照片影片存相機膠卷；其他存「下載項目」＝手機的 `/sdcard/Download`）。
 
 ## Sources/PhoneCentre/ADB
 

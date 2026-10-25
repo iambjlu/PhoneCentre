@@ -52,7 +52,8 @@ struct DeviceOverview: View {
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(4)
+                    .padding(.vertical, 4)
+                    .padding(.leading, 12)
                 }
 
                 RoundedRectangle(cornerRadius: 12)
