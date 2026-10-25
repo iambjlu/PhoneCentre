@@ -243,6 +243,7 @@ struct SideColumn: View {
     @Binding var showVideoSettings: Bool
     @Binding var showLocation: Bool
     @State private var showLauncher = false
+    @State private var showSound = false
     @ObservedObject private var location = LocationSimulation.shared
 
     var body: some View {
@@ -314,14 +315,8 @@ struct SideColumn: View {
             NavButton(help: location.isActive(model.device) ? "模擬定位（模擬中）" : "模擬定位") { showLocation = true } icon: {
                 sfIcon(location.isActive(model.device) ? "location.slash.fill" : "location")
             }
-            NavMenu(help: "聲音") { sfIcon("speaker.wave.2") } items: {
-                Button("音量 +") { model.key(KeyMap.volumeUp) }
-                Button("音量 −") { model.key(KeyMap.volumeDown) }
-                if !model.isVirtualDisplay && AppSettings.shared.audioEnabled {
-                    Divider()
-                    Button(model.muted ? "取消 Mac 端靜音" : "Mac 端靜音") { model.toggleMute() }
-                }
-            }
+            NavButton(help: "聲音") { showSound.toggle() } icon: { sfIcon("speaker.wave.2") }
+                .popover(isPresented: $showSound) { SoundPopover(model: model) }
             NavButton(help: "截圖存到桌面") { model.screenshot() } icon: { sfIcon("camera") }
             NavMenu(help: "旋轉") { sfIcon("rotate.right") } items: {
                 if model.isVirtualDisplay {
