@@ -99,16 +99,17 @@ struct DeviceOverview: View {
         return "\(d.prefix(4))/\(d.dropFirst(4).prefix(2))/\(d.suffix(2))"
     }
 
+    /// 不管 SIM 卡是哪家，只寫目前收到的電信：
+    /// 正常服務「中華電信 LTE -106dBm」；只能撥緊急電話「僅限緊急通話 LTE -106dBm (中華電信)」
     private func simText(_ sim: SimInfo) -> String {
-        var parts: [String] = []
-        if !sim.carrier.isEmpty { parts.append(sim.carrier) }
-        // 漫遊時連到的網路和 SIM 業者不同，標出來（只能撥緊急電話時另外有註記）
-        if sim.inService, !sim.network.isEmpty, sim.network != sim.carrier { parts.append("（漫遊：\(sim.network)）") }
-        if !sim.tech.isEmpty { parts.append(sim.tech) }
-        if let d = sim.dbm { parts.append("\(d)dBm") }
-        let text = parts.isEmpty ? (sim.inService ? "—" : "沒有服務") : parts.joined(separator: " ")
-        if sim.powerOff { return text + " (行動網路已關閉)" }
-        return sim.emergencyOnly && !sim.inService ? text + " (僅限緊急通話)" : text
+        if sim.powerOff { return "行動網路已關閉" }
+        let signal = [sim.tech, sim.dbm.map { "\($0)dBm" }].compactMap { $0 }.filter { !$0.isEmpty }
+        if sim.emergencyOnly && !sim.inService {
+            let head = (["僅限緊急通話"] + signal).joined(separator: " ")
+            return sim.carrier.isEmpty ? head : "\(head) (\(sim.carrier))"
+        }
+        let parts = (sim.carrier.isEmpty ? [] : [sim.carrier]) + signal
+        return parts.isEmpty ? (sim.inService ? "—" : "沒有服務") : parts.joined(separator: " ")
     }
 
     private var carrierText: String {
