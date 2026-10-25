@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 enum DeviceTab: String, CaseIterable, Identifiable {
-    case overview = "總覽", launchpad = "啟動台", files = "檔案", photos = "相機膠卷"
+    case overview = "總覽", launchpad = "啟動台", files = "檔案", photos = "相機膠卷", data = "訊息通知"
     var id: String { rawValue }
     var symbol: String {
         switch self {
@@ -10,6 +10,7 @@ enum DeviceTab: String, CaseIterable, Identifiable {
         case .launchpad: return "square.grid.3x3"
         case .files: return "folder"
         case .photos: return "photo.on.rectangle"
+        case .data: return "bell.badge"
         }
     }
 }
@@ -165,6 +166,7 @@ struct MainView: View {
                     case .launchpad: LaunchpadView(device: d, catalog: dm.catalog(for: d))
                     case .files: FileBrowserView(device: d).id(d.id)
                     case .photos: CameraRollView(device: d).id(d.id)
+                    case .data: PhoneDataView(device: d).id(d.id)
                     }
                 }                .softScrollEdge()
                 .navigationTitle(d.displayName)

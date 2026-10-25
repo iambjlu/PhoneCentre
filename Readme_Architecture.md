@@ -18,7 +18,7 @@ Resources/phonecentre-helper.jar  已建置好的 Android 輔助程式（沒有 
 AndroidHelper/                 Android 輔助程式原始碼（Java，d8 轉 dex，在手機以 app_process 執行）
 ThirdParty/scrcpy/scrcpy-server  官方 scrcpy-server v3.3.4（Apache-2.0，未修改）
 ThirdParty/NOTICE.md、licenses/  第三方授權聲明（會一起複製進 .app）
-Sources/PhoneCentre/           Swift 原始碼（下面各章節）
+Sources/PhoneCentre/           Swift 原始碼（下面各章節；PhoneData 為簡訊／通知／通話記錄）
 ```
 
 ## scripts/build.sh
@@ -74,7 +74,7 @@ Sources/PhoneCentre/           Swift 原始碼（下面各章節）
 ### MainView.swift
 主視窗：標準的 `NavigationSplitView`，分頁是放在工具列的原生分段選擇器；用最新 SDK 連結後由系統自動套用 Liquid Glass（圓角視窗、側邊欄、工具列按鈕、分頁藥丸）。視窗透明，最底層墊一層 `NSVisualEffectView`（`.underWindowBackground`）當毛玻璃底，SwiftUI 內容不加自訂底色。
 - 側邊欄：本機裝置、記住但目前離線的無線裝置（右鍵可立即重連或忘記）、各遠端 PhoneCentre 的裝置（每區標題有連線狀態燈與選單：重新連線、編輯、移除；沒有裝置時顯示狀態與「重新連線」按鈕）；底部顯示 adb server 狀態與最近事件。
-- 內容：分頁「總覽／啟動台／檔案／相機膠卷」；找不到 adb 時顯示 `AdbSetupView`（一鍵下載 Google Platform-Tools）。
+- 內容：分頁「總覽／啟動台／檔案／相機膠卷／訊息通知」；找不到 adb 時顯示 `AdbSetupView`（一鍵下載 Google Platform-Tools）。
 
 ### AddDeviceSheet.swift
 - 無線 ADB：「USB 轉無線」（已連上的 USB 裝置一鍵 `adb tcpip 5555`，取得 wlan0 IP 後自動 `adb connect`）、`adb connect`、Android 11+ 的配對（`adb pair`）、`adb mdns services` 找到的裝置。
@@ -203,6 +203,25 @@ Finder 風格檔案管理：位置側邊欄、上一頁／下一頁／上一層�
 Apple「照片」風格相機膠卷：相簿選擇（DCIM 與 Pictures 下的資料夾）、縮放滑桿、多選（⌘／⇧ 點選）、匯出、刪除、拖入匯入、拖出到 Finder、`MediaViewer` 檢視原圖或播放影片（影片用 AppKit 的 `AVPlayerView`，不用 SwiftUI 的 `VideoPlayer`：後者在新系統會因 `_AVKit_SwiftUI` 類別中繼資料初始化失敗而崩潰）（左右鍵切換）。
 `ThumbnailLoader`：格子出現才排隊、消失就取消，80ms 內的請求合併成一批交給手機端 `thumbs` 產生縮圖，結果存到 `thumbs` 快取（鍵含路徑、大小、修改時間與縮圖版本）。
 
+## Sources/PhoneCentre/PhoneData
+
+純 adb shell 讀取簡訊、通知、通話記錄，不在手機安裝任何東西；保存在 Mac 本機 `~/Library/Application Support/PhoneCentre/Data/<裝置鍵>/data.json`（不放快取目錄，不受快取容量清理影響）。
+
+### PhoneData.swift
+資料模型與解析器。
+- `PhoneSMS`、`PhoneCall`、`PhoneNotification`、`PhoneDataBundle`（一台裝置的全部資料與上次同步時間）。通知的 `clearedAt == nil` 表示手機上還在，有值表示已被清掉但仍在保存期限內。
+- `PhoneDataParser.rows`：解析 `content query` 輸出。每筆以「Row: N 」開頭；值可能含逗號與換行，所以依投影欄位的固定順序切割，最後一欄（簡訊 body）可含任何內容；`NULL` 視為空字串。
+- `notifications`：解析 `dumpsys notification --noredact` 的「Notification List」區段（只含目前還在的通知）。每個 `NotificationRecord(` 取 `pkg=`、`key=`、`flags=`（0x2 = 常駐通知），再從 extras 取 `android.title`／`android.text`／`android.bigText`；值含換行時累積到行尾的「)」。找不到「Notification List」（指令失敗）回傳 nil，避免把所有通知誤判成已清除。
+
+### PhoneDataStore.swift
+- 資料來源：簡訊 `content query --uri content://sms`（欄位 `_id:address:date:type:read:body`）、通話記錄 `content://call_log/calls`（`_id:number:name:date:duration:type`），以 `--where date>…` 只抓比已保存最新一筆更新的資料（第一次抓取只抓保存期限內的）。MMS 不收集。
+- 通知：每次同步對照手機目前的通知——不見的標上 `clearedAt`（已清除）、新出現的加入、同一個 key 內容有變就原地更新；同一個 key 清掉後又出現會是新的一筆。通知無法回溯，只能在手機連線期間記錄。
+- 定時：`start()` 每 15 秒一次，通知每次都同步，簡訊與通話記錄每分鐘一次；只處理已載入裝置資訊的在線裝置（本機與遠端都可），需在設定開啟 `phoneDataEnabled`。「立即更新」呼叫 `sync`。
+- 保存期限：`prune()` 依 `smsRetentionDays`／`callRetentionDays`／`notificationRetentionDays`（0 = 永久）刪除過期資料；手機上還在的通知不刪，已清除的通知以首次看到的時間計算。啟動、設定改變、新資料進來與每小時執行。
+
+### PhoneDataView.swift
+主視窗「訊息通知」分頁。未開啟收集時顯示說明與開啟按鈕。上方分段選擇通知／簡訊／通話記錄、搜尋、立即更新、選單（停止收集、刪除這台已保存的資料）。通知再分「還在手機上」與「已清除（保存期限內）」，預設隱藏常駐通知（可勾選顯示）。`PhoneDataRetentionPicker` 是設定頁用的保存天數選單。
+
 ## Sources/PhoneCentre/Launchpad
 
 ### LaunchpadView.swift
@@ -225,7 +244,7 @@ PhoneCentre 之間的加密通道：Network.framework 的 TLS（PSK，`TLS_PSK_W
 ## Sources/PhoneCentre/Settings
 
 ### SettingsView.swift
-設定視窗分頁：一般（選單列、Dock 模式、啟動台開啟方式）、連線（自動維持連線、記住的無線裝置、adb 路徑與下載）、鏡像（預設畫質、鍵盤模式、剪貼簿同步、音訊與手機靜音、黑屏、Touch ID 解鎖提示）、分享（開關、port、密碼、狀態）、儲存（設定檔資料夾／iCloud Drive、密碼是否同步、快取用量與上限、清除時機、清除快取、清除 Dock 副本）。
+設定視窗分頁：一般（選單列、Dock 模式、啟動台開啟方式）、連線（自動維持連線、記住的無線裝置、adb 路徑與下載）、鏡像（預設畫質、鍵盤模式、剪貼簿同步、音訊與手機靜音、黑屏、Touch ID 解鎖提示）、分享（開關、port、密碼、狀態）、儲存（設定檔資料夾／iCloud Drive、密碼是否同步、簡訊／通知／通話記錄的收集開關與各自的保存天數、快取用量與上限、清除時機、清除快取、清除 Dock 副本）。
 
 ## Sources/PhoneCentre/Support
 

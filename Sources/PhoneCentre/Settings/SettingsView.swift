@@ -181,6 +181,17 @@ private struct StorageSettings: View {
                 Text("把 PhoneCentre.app 帶到另一台 Mac，選同一個 iCloud Drive 資料夾就能沿用設定。")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            Section("簡訊、通知、通話記錄（透過 adb 讀取，不需在手機安裝程式）") {
+                Toggle("定時收集並保存在這台 Mac", isOn: $s.data.phoneDataEnabled)
+                PhoneDataRetentionPicker(title: "簡訊保存", days: $s.data.smsRetentionDays)
+                PhoneDataRetentionPicker(title: "通知保存", days: $s.data.notificationRetentionDays)
+                PhoneDataRetentionPicker(title: "通話記錄保存", days: $s.data.callRetentionDays)
+                Text("通知只能在手機連線期間記錄；手機上還在的通知不受保存天數影響，清掉之後才開始計算。超過天數的資料會自動刪除。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            .onChange(of: s.data.smsRetentionDays) { _, _ in PhoneDataStore.shared.prune() }
+            .onChange(of: s.data.callRetentionDays) { _, _ in PhoneDataStore.shared.prune() }
+            .onChange(of: s.data.notificationRetentionDays) { _, _ in PhoneDataStore.shared.prune() }
             Section("快取（App 圖示、相片縮圖、預覽下載）") {
                 LabeledContent("目前使用", value: cache.totalBytes.fileSizeString)
                 Stepper("上限：\(s.cacheLimitMB) MB", value: $s.data.cacheLimitMB, in: 20...10_000, step: 50)

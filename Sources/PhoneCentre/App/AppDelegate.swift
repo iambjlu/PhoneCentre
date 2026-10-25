@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         CacheManager.shared.start()
+        PhoneDataStore.shared.start()
         DeviceManager.shared.start()
         RemoteManager.shared.start()
         ShareServer.shared.apply()

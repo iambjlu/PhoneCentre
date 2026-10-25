@@ -71,6 +71,12 @@ struct SettingsData: Codable, Equatable {
     var cacheClearPolicy: CacheClearPolicy = .afterDays
     var cacheClearDays = 7
     var offerTouchIDUnlock = true
+    /// 透過 adb 收集並保存簡訊、通知、通話記錄
+    var phoneDataEnabled = false
+    /// 各類資料保存幾天（0 = 永久）
+    var smsRetentionDays = 30
+    var callRetentionDays = 30
+    var notificationRetentionDays = 30
     /// 每台裝置（CacheManager.key）釘選的 App 套件名稱，依釘選順序
     var pinnedApps: [String: [String]] = [:]
     /// 密碼類資料也寫進同步資料夾（明碼）
