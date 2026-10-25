@@ -40,6 +40,8 @@ final class MirrorModel: ObservableObject {
     /// App 被關掉時顯示的最後一幀（毛玻璃霧化）
     @Published var closedSnapshot: NSImage?
     private var appSeen = false
+    /// 啟動前 App 的程序就已經在跑（例如從主螢幕拖出來）：搬到新顯示器後密度不同，要重新啟動畫面
+    private var appWasRunning = false
     private var lastSnapshotRequest = Date.distantPast
     private var emptyChecks = 0
     /// 這個視窗的虛擬顯示器 id（主螢幕鏡像為 nil）
@@ -110,6 +112,10 @@ final class MirrorModel: ObservableObject {
             cfg.startApp = handover ? nil : appPackage
         }
         // 舊的 session 先拔掉回呼，避免它晚到的「已停止」事件被當成新連線中斷
+        if !handover, retiring == nil, let pkg = appPackage {
+            let c = device.client
+            Task { appWasRunning = !((try? await c.shell("pidof \(pkg)")) ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        }
         let hadOld: Bool
         if handover, let old = session {
             old.onState = nil; old.onFrameSize = nil; old.onSample = nil; old.onDeviceClipboard = nil
@@ -255,13 +261,25 @@ final class MirrorModel: ObservableObject {
         _ = try? await c.shell("wm density \(dpi) -d \(d)")
     }
 
+    /// 把 App 重新啟動（強制停止後在這個顯示器重開），讓它依這個顯示器的密度重新繪製。
+    /// App 程序在別的密度的顯示器上跑過，光搬移 task 或送設定變更，它常停在舊的版面（太大或太小），
+    /// 跟手動「關掉 App 再拖出來」是同樣的做法。
+    private func redrawApp(_ pkg: String, display: Int) async {
+        _ = try? await device.client.shell("am force-stop \(pkg)")
+        try? await Task.sleep(nanoseconds: 500_000_000)
+        session?.send(.startApp(pkg))
+    }
+
     /// 啟動後確認 App 真的在這個顯示器上。App 已經在主螢幕（或別的顯示器）執行時，
     /// 啟動指令可能只是把原本的 task 叫到前面，這邊的畫面會一直是黑的：找到那個 task 搬過來。
     private func ensureAppOnDisplay(_ pkg: String, display: Int) async {
         for _ in 0..<3 {
             try? await Task.sleep(nanoseconds: 2_500_000_000)
             guard retiring == nil, !userStopped, displayId == display else { return }
-            if !(await rootTasks(onDisplay: display)).isEmpty { await nudgeDisplayConfig(display); return }
+            if !(await rootTasks(onDisplay: display)).isEmpty {
+                if appWasRunning { appWasRunning = false; await redrawApp(pkg, display: display) } else { await nudgeDisplayConfig(display) }
+                return
+            }
             let out = (try? await device.client.shell("am stack list | grep -E '^RootTask id=|taskId='", timeout: 10)) ?? ""
             var root: Int?, rootDisplay: Int?
             var found: Int?
@@ -276,7 +294,8 @@ final class MirrorModel: ObservableObject {
             if let found {
                 _ = try? await device.client.shell("am display move-stack \(found) \(display)")
                 try? await Task.sleep(nanoseconds: 600_000_000)
-                await nudgeDisplayConfig(display)
+                appWasRunning = false
+                await redrawApp(pkg, display: display)
             } else {
                 session?.send(.startApp(pkg))
             }
@@ -300,6 +319,8 @@ final class MirrorModel: ObservableObject {
         }
         var script = tasks.map { "am display move-stack \($0) 0" }.joined(separator: "; ")
         if let prev, !prev.isEmpty { script += "; am start -n \(prev) --activity-reorder-to-front" }
+        // App 回到背景後把它的程序收掉：下次在主螢幕打開時才會依主螢幕的密度重新繪製（不然會變超小）
+        if let app = appPackage { script += "; am kill \(app)" }
         _ = try? await device.client.shell(script, timeout: 10)
     }
 
