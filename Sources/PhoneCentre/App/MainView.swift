@@ -157,16 +157,27 @@ struct MainView: View {
             AdbSetupView()
         } else if let id = selection, let d = dm.device(id: id) {
             if d.isOnline {
-                // 跟 InboxRelay 一樣用 TabView＋tabItem（系統的分頁控制項）。
-                // 只有目前選到的分頁才真的建立內容（其他分頁不用先載入縮圖、檔案列表）
-                TabView(selection: $tab) {
-                    tabPage(.overview) { DeviceOverview(device: d) }
-                    tabPage(.launchpad) { LaunchpadView(device: d, catalog: dm.catalog(for: d)) }
-                    tabPage(.files) { FileBrowserView(device: d).id(d.id) }
-                    tabPage(.photos) { CameraRollView(device: d).id(d.id) }
+                // 分頁：標準的分段選擇器放在工具列（用最新 SDK 連結後由系統畫成玻璃藥丸）。
+                // 內容只建立目前選到的分頁（其他分頁不用先載入縮圖、檔案列表）
+                Group {
+                    switch tab {
+                    case .overview: DeviceOverview(device: d)
+                    case .launchpad: LaunchpadView(device: d, catalog: dm.catalog(for: d))
+                    case .files: FileBrowserView(device: d).id(d.id)
+                    case .photos: CameraRollView(device: d).id(d.id)
+                    }
                 }
                 .navigationTitle(d.displayName)
                 .navigationSubtitle(d.subtitle)
+                .toolbar {
+                    ToolbarItem(placement: .principal) {
+                        Picker("", selection: $tab) {
+                            ForEach(DeviceTab.allCases) { Text($0.rawValue).tag($0) }
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                    }
+                }
             } else {
                 ContentUnavailableView(d.displayName, systemImage: "exclamationmark.triangle", description: Text(d.stateDescription))
             }
@@ -174,15 +185,6 @@ struct MainView: View {
             ContentUnavailableView("尚未選擇裝置", systemImage: "iphone.gen3",
                                    description: Text("用 USB 連接已開啟「USB 偵錯」的 Android 手機，或按右上角 + 加入無線裝置。"))
         }
-    }
-}
-
-extension MainView {
-    @ViewBuilder
-    fileprivate func tabPage<C: View>(_ t: DeviceTab, @ViewBuilder _ content: () -> C) -> some View {
-        Group { if tab == t { content() } else { Color.clear } }
-            .tabItem { Label(t.rawValue, systemImage: t.symbol) }
-            .tag(t)
     }
 }
 

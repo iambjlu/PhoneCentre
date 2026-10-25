@@ -53,7 +53,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             w.title = "手機中心"
             w.isReleasedWhenClosed = false
             // 標準視窗與標準元件：用最新 SDK 連結，系統會自動套用 Liquid Glass（側邊欄、工具列、分頁、按鈕）
+            w.isOpaque = false
+            w.backgroundColor = .clear   // 視窗底部的系統材質才看得到後面的桌面
             w.contentView = NSHostingView(rootView: MainView())
+            // 視窗底層墊一層真正的桌面模糊（NSVisualEffectView）；SwiftUI 內容保持系統預設、不加自訂底色
+            let blur = NSVisualEffectView()
+            blur.material = .underWindowBackground
+            blur.blendingMode = .behindWindow
+            blur.state = .active
+            blur.frame = w.contentView?.superview?.bounds ?? .zero
+            blur.autoresizingMask = [.width, .height]
+            w.contentView?.superview?.addSubview(blur, positioned: .below, relativeTo: w.contentView)
             w.setFrameAutosaveName("MainWindow")
             if !w.setFrameUsingName("MainWindow") { w.center() }
             mainWindow = w
