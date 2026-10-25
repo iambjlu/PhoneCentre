@@ -130,13 +130,14 @@ struct MirrorContentView: View {
 struct AppRail: View {
     @ObservedObject var catalog: AppCatalog
     let onTap: (String) -> Void
+    @ObservedObject private var settings = AppSettings.shared
     @State private var dragPkg: String?
     /// 往左或往右拖超過這個距離（拖出 App 列）放開才算
     static let tearOffDistance: CGFloat = 70
 
     /// 液態玻璃面板的高度跟著圖示數量：放得下就剛好包住，放不下才捲動
     var body: some View {
-        if catalog.running.isEmpty && catalog.recent.isEmpty {
+        if pinned.isEmpty && openOnly.isEmpty {
             EmptyView()
         } else {
             ViewThatFits(in: .vertical) {
@@ -146,16 +147,20 @@ struct AppRail: View {
         }
     }
 
+    /// 像 Mac Dock：使用者釘選的 App 一直在，執行中但沒釘選的接在分隔線後面
+    private var pinned: [String] { settings.pinned(for: catalog.device) }
+    private var openOnly: [String] { catalog.running.filter { !pinned.contains($0) } }
+
     private var iconList: some View {
         VStack(spacing: 10) {
-            ForEach(catalog.running, id: \.self) { pkg in
-                railIcon(pkg, running: true)
+            ForEach(pinned, id: \.self) { pkg in
+                railIcon(pkg, running: catalog.running.contains(pkg))
             }
-            if !catalog.running.isEmpty && !catalog.recent.isEmpty {
+            if !pinned.isEmpty && !openOnly.isEmpty {
                 Divider().padding(.horizontal, 12).opacity(0.4)
             }
-            ForEach(catalog.recent, id: \.self) { pkg in
-                railIcon(pkg, running: false)
+            ForEach(openOnly, id: \.self) { pkg in
+                railIcon(pkg, running: true)
             }
         }
         .padding(.vertical, 10)
@@ -190,6 +195,10 @@ struct AppRail: View {
             })
         .help(catalog.label(for: pkg))
         .contextMenu {
+            Button(settings.isPinned(pkg, on: catalog.device) ? "從 App 列移除" : "保留在 App 列") {
+                settings.togglePin(pkg, on: catalog.device)
+            }
+            Divider()
             Button("在獨立視窗開啟") { WindowManager.shared.openApp(catalog.device, package: pkg) }
             Button("強制停止") { Task { await catalog.forceStop(pkg) } }
         }
