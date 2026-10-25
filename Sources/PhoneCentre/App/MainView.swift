@@ -180,15 +180,7 @@ struct MainView: View {
                 }                .softScrollEdge()
                 .navigationTitle(d.displayName)
                 .navigationSubtitle(d.subtitle)
-                .toolbar {
-                    ToolbarItem(placement: .primaryAction) {
-                        Picker("", selection: $tab) {
-                            ForEach(DeviceTab.allCases) { Text($0.rawValue).tag($0) }
-                        }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
-                    }
-                }
+                .modifier(DeviceToolbar(device: d, tab: $tab))
             } else {
                 ContentUnavailableView(d.displayName, systemImage: "exclamationmark.triangle", description: Text(d.stateDescription))
             }
@@ -275,5 +267,66 @@ extension View {
     /// 內容捲到工具列下面時用柔和的淡出（預設的硬邊會在工具列後面出現一塊長方形底板）
     @ViewBuilder func softScrollEdge() -> some View {
         if #available(macOS 26.0, *) { self.scrollEdgeEffectStyle(.soft, for: .top).scrollEdgeEffectHidden(true, for: .top) } else { self }
+    }
+}
+
+
+/// 工具列：裝置名稱靠左，分頁選擇器空間夠時在中間，被名稱擠到時才往右移一點（不是靠右對齊）。
+/// macOS 15 以上自己畫名稱與副標題（隱藏系統的），讓兩者排在同一個版面；舊系統分頁放在中間。
+private struct DeviceToolbar: ViewModifier {
+    let device: Device
+    @Binding var tab: DeviceTab
+
+    private var picker: some View {
+        Picker("", selection: $tab) {
+            ForEach(DeviceTab.allCases) { Text($0.rawValue).tag($0) }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .fixedSize()
+    }
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(macOS 15.0, *) {
+            content
+                .toolbar(removing: .title)
+                .toolbar {
+                    ToolbarItem(placement: .principal) {
+                        TitleTabsLayout {
+                            VStack(alignment: .leading, spacing: 0) {
+                                Text(device.displayName).font(.headline).lineLimit(1)
+                                Text(device.subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                            .padding(.leading, 8)
+                            picker
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                }
+        } else {
+            content.toolbar { ToolbarItem(placement: .principal) { picker } }
+        }
+    }
+}
+
+/// 第一個子視圖（名稱）靠左；第二個（分頁）盡量置中，會被名稱擠到才往右移，名稱放不下才截斷
+private struct TitleTabsLayout: Layout {
+    var gap: CGFloat = 20
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let t = subviews[0].sizeThatFits(.unspecified), p = subviews[1].sizeThatFits(.unspecified)
+        return CGSize(width: proposal.width ?? t.width + gap + p.width, height: max(t.height, p.height))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let title = subviews[0], tabs = subviews[1]
+        let tw = title.sizeThatFits(.unspecified).width
+        let pw = tabs.sizeThatFits(.unspecified).width
+        var x = max(bounds.midX - pw / 2, bounds.minX + tw + gap)   // 置中，被名稱擠到才右移
+        x = min(x, bounds.maxX - pw)
+        title.place(at: CGPoint(x: bounds.minX, y: bounds.midY), anchor: .leading,
+                    proposal: ProposedViewSize(width: max(x - gap - bounds.minX, 0), height: bounds.height))
+        tabs.place(at: CGPoint(x: x, y: bounds.midY), anchor: .leading, proposal: .unspecified)
     }
 }
