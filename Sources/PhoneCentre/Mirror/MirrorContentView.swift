@@ -171,8 +171,6 @@ struct AppRail: View {
     var part: Part = .current
     /// 在視窗底部橫向排列
     var horizontal = false
-    /// 橫向時，空間夠的話在「現在在用的 App」旁邊寫名字
-    var showName = false
     /// 「其他」盤子的高度與自然高度（由右側欄統一分配空間）
     var fixedHeight: CGFloat?
     var onNatural: ((CGFloat) -> Void)?
@@ -191,14 +189,18 @@ struct AppRail: View {
         switch part {
         case .current:
             if let current {
-                HStack(spacing: 8) {
-                    railIcon(current, running: true)
-                    if horizontal && showName {
-                        Text(catalog.label(for: current)).font(.system(size: 12, weight: .medium))
-                            .lineLimit(1).frame(maxWidth: 110)
-                            .fixedSize(horizontal: true, vertical: false)   // 盤子貼著圖示與名稱的寬度，不撐長
-                            .foregroundStyle(.white.opacity(0.9))
+                // 橫向時：空間夠就在 App 旁邊寫名字，不夠只剩圖示（依實際空白寬度判斷）
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) {
+                        railIcon(current, running: true)
+                        if horizontal {
+                            Text(catalog.label(for: current)).font(.system(size: 12, weight: .medium))
+                                .lineLimit(1).frame(maxWidth: 110)
+                                .fixedSize(horizontal: true, vertical: false)   // 盤子貼著圖示與名稱的寬度，不撐長
+                                .foregroundStyle(.white.opacity(0.9))
+                        }
                     }
+                    railIcon(current, running: true)
                 }
                 .padding(.vertical, horizontal ? 4 : 10).padding(.horizontal, horizontal ? 8 : 0)
                 .liquidPanel()

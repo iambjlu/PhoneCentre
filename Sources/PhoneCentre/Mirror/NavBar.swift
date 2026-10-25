@@ -292,18 +292,20 @@ struct SideColumn: View {
                     if model.isAppWindow, let pkg = model.appPackage {
                         // 獨立視窗：沒有其他 App 盤子，現用的 App 放在「狀態環與導覽盤子之間那塊空白」的正中間
                         Spacer(minLength: 0)
-                        HStack(spacing: 8) {
-                            AppIconView(catalog: catalog, package: pkg, size: 34)
-                            if barWidth > 900 {
+                        // 空間夠就寫 App 名字，不夠只剩圖示（ViewThatFits 依實際空白寬度判斷，不用固定的視窗寬度）
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: 8) {
+                                AppIconView(catalog: catalog, package: pkg, size: 34)
                                 Text(model.appLabel ?? catalog.label(for: pkg)).font(.system(size: 12, weight: .medium))
                                     .lineLimit(1).frame(maxWidth: 140)
-                                    .fixedSize(horizontal: true, vertical: false)   // 盤子貼著圖示與名稱的寬度，不撐長
+                                    .fixedSize(horizontal: true, vertical: false)
                                     .foregroundStyle(.white.opacity(0.9))
                             }
+                            AppIconView(catalog: catalog, package: pkg, size: 34)
                         }
                         .padding(.horizontal, 8).padding(.vertical, 4).liquidPanel()
                     } else {
-                        AppRail(catalog: catalog, part: .current, horizontal: true, showName: barWidth > 900) { pkg in model.launch(pkg) }
+                        AppRail(catalog: catalog, part: .current, horizontal: true) { pkg in model.launch(pkg) }
                         AppRail(catalog: catalog, part: .others, horizontal: true) { pkg in model.launch(pkg) }
                     }
                     // 導覽項目與金剛三鍵放在最右邊同一塊盤子裡，中間只用分隔線隔開；
