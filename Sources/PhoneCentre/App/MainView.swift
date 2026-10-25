@@ -129,8 +129,6 @@ struct MainView: View {
             }
         }
         .padding(10)
-        .glassShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .padding(8)
     }
 
     private var serverColor: Color {
@@ -159,27 +157,16 @@ struct MainView: View {
             AdbSetupView()
         } else if let id = selection, let d = dm.device(id: id) {
             if d.isOnline {
-                VStack(spacing: 0) {
-                    switch tab {
-                    case .overview: DeviceOverview(device: d)
-                    case .launchpad: LaunchpadView(device: d, catalog: dm.catalog(for: d))
-                    case .files: FileBrowserView(device: d).id(d.id)
-                    case .photos: CameraRollView(device: d).id(d.id)
-                    }
+                // 跟 InboxRelay 一樣用 TabView＋tabItem（系統的分頁控制項）。
+                // 只有目前選到的分頁才真的建立內容（其他分頁不用先載入縮圖、檔案列表）
+                TabView(selection: $tab) {
+                    tabPage(.overview) { DeviceOverview(device: d) }
+                    tabPage(.launchpad) { LaunchpadView(device: d, catalog: dm.catalog(for: d)) }
+                    tabPage(.files) { FileBrowserView(device: d).id(d.id) }
+                    tabPage(.photos) { CameraRollView(device: d).id(d.id) }
                 }
                 .navigationTitle(d.displayName)
                 .navigationSubtitle(d.subtitle)
-                .toolbar {
-                    // 原生分段選擇器放在視窗工具列：新系統會自動呈現成玻璃藥丸
-                    ToolbarItem(placement: .principal) {
-                        Picker("", selection: $tab) {
-                            ForEach(DeviceTab.allCases) { Text($0.rawValue).tag($0) }
-                        }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
-                        .frame(width: 320)
-                    }
-                }
             } else {
                 ContentUnavailableView(d.displayName, systemImage: "exclamationmark.triangle", description: Text(d.stateDescription))
             }
@@ -187,6 +174,15 @@ struct MainView: View {
             ContentUnavailableView("尚未選擇裝置", systemImage: "iphone.gen3",
                                    description: Text("用 USB 連接已開啟「USB 偵錯」的 Android 手機，或按右上角 + 加入無線裝置。"))
         }
+    }
+}
+
+extension MainView {
+    @ViewBuilder
+    fileprivate func tabPage<C: View>(_ t: DeviceTab, @ViewBuilder _ content: () -> C) -> some View {
+        Group { if tab == t { content() } else { Color.clear } }
+            .tabItem { Label(t.rawValue, systemImage: t.symbol) }
+            .tag(t)
     }
 }
 
@@ -253,27 +249,4 @@ struct AdbSetupView: View {
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
-}
-
-extension View {
-    /// 視窗底部是毛玻璃（桌面透出來）；macOS 15 以上用 containerBackground
-    @ViewBuilder func windowGlassBackground() -> some View {
-        if #available(macOS 15.0, *) {
-            self.containerBackground(for: .window) { WindowBlur() }
-        } else {
-            self
-        }
-    }
-}
-
-/// 視窗後面桌面的模糊（真正的毛玻璃，不是半透明）
-struct WindowBlur: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let v = NSVisualEffectView()
-        v.material = .underWindowBackground
-        v.blendingMode = .behindWindow
-        v.state = .active
-        return v
-    }
-    func updateNSView(_ v: NSVisualEffectView, context: Context) {}
 }

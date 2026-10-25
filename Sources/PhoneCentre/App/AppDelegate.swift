@@ -52,18 +52,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                              backing: .buffered, defer: false)
             w.title = "手機中心"
             w.isReleasedWhenClosed = false
-            // 視窗透明，SwiftUI 內容用 containerBackground 墊毛玻璃（直接當 contentView，工具列才會正常整合）
-            w.isOpaque = false
-            w.backgroundColor = .clear
+            // 標準視窗與標準元件：用最新 SDK 連結，系統會自動套用 Liquid Glass（側邊欄、工具列、分頁、按鈕）
             w.contentView = NSHostingView(rootView: MainView())
-            // 在內容後面（視窗最底層）墊一層桌面模糊：內容透明，就會看到毛玻璃，工具列也維持正常
-            let blur = NSVisualEffectView()
-            blur.material = .underWindowBackground
-            blur.blendingMode = .behindWindow
-            blur.state = .active
-            blur.frame = w.contentView?.superview?.bounds ?? .zero
-            blur.autoresizingMask = [.width, .height]
-            w.contentView?.superview?.addSubview(blur, positioned: .below, relativeTo: w.contentView)
             w.setFrameAutosaveName("MainWindow")
             if !w.setFrameUsingName("MainWindow") { w.center() }
             mainWindow = w

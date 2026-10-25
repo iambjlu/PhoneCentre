@@ -277,7 +277,7 @@ struct MediaViewer: View {
             ZStack {
                 Color.black
                 if let player {
-                    VideoPlayer(player: player)
+                    AppKitPlayerView(player: player)
                 } else if let url, let img = NSImage(contentsOf: url) {
                     Image(nsImage: img).resizable().scaledToFit()
                 } else if let error {
@@ -314,5 +314,20 @@ struct MediaViewer: View {
         } catch {
             self.error = error.localizedDescription
         }
+    }
+}
+
+/// 影片播放：直接用 AppKit 的 AVPlayerView。SwiftUI 的 VideoPlayer（_AVKit_SwiftUI）在這個系統上
+/// 初始化類別中繼資料時會直接崩潰（點開相機膠卷的影片就當機）。
+struct AppKitPlayerView: NSViewRepresentable {
+    let player: AVPlayer
+    func makeNSView(context: Context) -> AVPlayerView {
+        let v = AVPlayerView()
+        v.player = player
+        v.controlsStyle = .floating
+        return v
+    }
+    func updateNSView(_ v: AVPlayerView, context: Context) {
+        if v.player !== player { v.player = player }
     }
 }
