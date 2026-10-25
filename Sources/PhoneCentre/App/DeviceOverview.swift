@@ -105,7 +105,7 @@ struct DeviceOverview: View {
         if !sim.tech.isEmpty { parts.append(sim.tech) }
         if let d = sim.dbm { parts.append("\(d)dBm") }
         let text = parts.isEmpty ? (sim.inService ? "—" : "沒有服務") : parts.joined(separator: " ")
-        return sim.emergencyOnly && !sim.inService ? text + "(僅限緊急通話)" : text
+        return sim.emergencyOnly && !sim.inService ? text + " (僅限緊急通話)" : text
     }
 
     private var carrierText: String {
@@ -140,9 +140,13 @@ struct DeviceOverview: View {
     private func loadStatus() async {
         let c = device.client
         if let s = await DeviceStatus.fetch(c) { status = s }
-        if let df = try? await c.shell("df -h /data | tail -1") {
+        // df -k：總量、已用、可用（KB）。顯示「剩餘可用空間」與占總容量的百分比
+        if let df = try? await c.shell("df -k /data | tail -1") {
             let p = df.split(separator: " ", omittingEmptySubsequences: true)
-            if p.count >= 4 { storage = "已用 \(p[2]) / 共 \(p[1])，剩餘 \(p[3])" }
+            if p.count >= 4, let total = Double(p[1]), let used = Double(p[2]), let avail = Double(p[3]), total > 0 {
+                func g(_ kb: Double) -> String { String(format: "%.0fG", kb / 1_048_576) }
+                storage = "已用 \(g(used)) / 共 \(g(total))，剩餘可用空間 \(g(avail))（\(Int((avail / total * 100).rounded()))%）"
+            }
         }
     }
 

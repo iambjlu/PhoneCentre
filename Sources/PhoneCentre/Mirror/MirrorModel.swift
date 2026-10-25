@@ -422,6 +422,8 @@ final class MirrorModel: ObservableObject {
         }
     }
 
+    func pendingChange(_ text: String) { pendingStatus = text }
+
     func restart() {
         view.clear()
         start()

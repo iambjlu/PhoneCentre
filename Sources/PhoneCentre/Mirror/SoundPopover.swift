@@ -15,6 +15,7 @@ final class SoundState: ObservableObject {
     @Published var maxVolume = 15
     @Published var ringer: Ringer = .normal
     @Published var message = ""
+    @Published var dnd = false
     private var lastNonZero = 8
     private let device: Device
 
@@ -30,7 +31,25 @@ final class SoundState: ObservableObject {
             if nums.count >= 3 { volume = nums[0]; maxVolume = max(nums[2], 1); if volume > 0 { lastNonZero = volume } }
         }
         if let r = await currentRinger() { ringer = r }
+        if let z = try? await c.shell("settings get global zen_mode") { dnd = (Int(z.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0) != 0 }
     }
+
+    /// 請勿打擾：開 = 只允許重要的打擾（priority），關 = 全部通知
+    func setDnd(_ on: Bool) {
+        dnd = on
+        let c = device.client
+        Task {
+            _ = try? await c.shell("cmd notification set_dnd \(on ? "priority" : "off")")
+            try? await Task.sleep(nanoseconds: 700_000_000)
+            if let z = try? await c.shell("settings get global zen_mode") { dnd = (Int(z.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0) != 0 }
+            if let r = await currentRinger() { ringer = r }
+        }
+    }
+
+    /// 顯示用的音量數字 0～150（把手機的 0～max 格換算過去）
+    var displayVolume: Int { Int((Double(volume) / Double(max(maxVolume, 1)) * 150).rounded()) }
+    /// 超過 120 太大聲
+    var isLoud: Bool { displayVolume > 120 }
 
     func setVolume(_ v: Int) {
         let v = min(max(v, 0), maxVolume)
@@ -77,6 +96,16 @@ final class SoundState: ObservableObject {
 struct SoundPopover: View {
     @ObservedObject var model: MirrorModel
     @StateObject private var state: SoundState
+    @ObservedObject private var settings = AppSettings.shared
+
+    private var phoneMuted: Bool { settings.muteDeviceWhenForwarding }
+
+    /// 手機是否同時發聲：關閉「傳到 Mac 時手機靜音」。音源在連線時決定，所以要重新連線才會生效
+    private func setPhonePlayback(_ on: Bool) {
+        settings.data.muteDeviceWhenForwarding = !on
+        model.pendingChange("正在變更聲音輸出…")
+        model.restart()
+    }
 
     init(model: MirrorModel) {
         self.model = model
@@ -87,7 +116,7 @@ struct SoundPopover: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("聲音").font(.headline)
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 10) {
                 Text("媒體音量").foregroundStyle(.secondary)
                 HStack(spacing: 10) {
                     Button { state.toggleMute() } label: {
@@ -98,7 +127,22 @@ struct SoundPopover: View {
                     Slider(value: Binding(get: { Double(state.volume) }, set: { state.setVolume(Int($0.rounded())) }),
                            in: 0...Double(state.maxVolume), step: 1)
                         .controlSize(.small)
-                    Text("\(state.volume)").monospacedDigit().foregroundStyle(.secondary).frame(width: 24, alignment: .trailing)
+                        .tint(state.isLoud ? .red : nil)
+                    HStack(spacing: 2) {
+                        if state.isLoud { Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red).help("音量太大，小心聽力") }
+                        Text("\(state.displayVolume)").monospacedDigit()
+                            .foregroundStyle(state.isLoud ? Color.red : .secondary)
+                            .fontWeight(state.isLoud ? .bold : .regular)
+                    }
+                    .frame(width: 46, alignment: .trailing)
+                }
+                if !model.isVirtualDisplay {
+                    Toggle("從 Mac 播放", isOn: Binding(get: { !model.muted }, set: { _ in model.toggleMute() }))
+                        .disabled(!AppSettings.shared.audioEnabled)
+                        .help(AppSettings.shared.audioEnabled ? "把手機的聲音傳到 Mac 播放" : "要先在「設定 → 鏡像」開啟「把手機聲音傳到 Mac」")
+                    Toggle("從手機播放", isOn: Binding(get: { !phoneMuted }, set: { setPhonePlayback($0) }))
+                        .disabled(!AppSettings.shared.audioEnabled)
+                        .help("傳到 Mac 時，手機也同時發聲（需要 Android 13 以上）")
                 }
             }
 
@@ -112,12 +156,9 @@ struct SoundPopover: View {
                 if !state.message.isEmpty {
                     Text(state.message).font(.caption).foregroundStyle(.secondary)
                 }
+                Toggle("請勿打擾", isOn: Binding(get: { state.dnd }, set: { state.setDnd($0) }))
             }
 
-            if !model.isVirtualDisplay && AppSettings.shared.audioEnabled {
-                Toggle("Mac 端靜音（手機聲音傳到 Mac 時）", isOn: Binding(get: { model.muted }, set: { _ in model.toggleMute() }))
-                    .toggleStyle(.switch).controlSize(.small)
-            }
         }
         .padding(16)
         .frame(width: 290)
