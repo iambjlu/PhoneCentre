@@ -151,7 +151,7 @@ Mac 虛擬 keyCode（與鍵盤配置、輸入法無關）→ Android keycode；�
 一個鏡像視窗的狀態與工作階段管理。
 - 啟動／重啟 session；重啟時先拔掉舊 session 的回呼（避免晚到的「已停止」被當成新連線中斷），並延遲 0.6 秒等舊 server 釋放硬體編碼器。
 - 自動維持連線：連線中斷且裝置回來就重連。
-- 虛擬顯示器大小：像素 = 視窗點數 × Mac 螢幕的 backing scale（非 Retina 就是 1:1），密度 160 × scale，讓 1 個 Mac 點約等於 1 個 Android dp；受「最大解析度」限制。放開視窗邊框時依新大小重建虛擬顯示器（`resizeVirtualDisplay`）。
+- 虛擬顯示器大小：像素 = 視窗點數 × Mac 螢幕的 backing scale（非 Retina 就是 1:1），密度 160 × scale，讓 1 個 Mac 點約等於 1 個 Android dp；長寬取 8 的倍數（無條件捨去，不超過視窗）；受「最大解析度」限制。放開視窗邊框時依新大小重建虛擬顯示器（`resizeVirtualDisplay`）。
 - 定時工作：Mac 剪貼簿 → 手機（0.7 秒）；主鏡像與桌面模式每 3 秒更新 App 列；主鏡像視窗在前景時偵測鎖定畫面。
 - 操作：按鍵、黑屏切換、Mac 端靜音、啟動 App、截圖存到桌面、套用畫質（重啟）、拖放處理、Touch ID 解鎖。
 

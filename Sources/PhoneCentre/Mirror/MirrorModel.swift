@@ -132,7 +132,8 @@ final class MirrorModel: ObservableObject {
         let cap = CGFloat(videoOptions.maxSize > 0 ? videoOptions.maxSize : 2560)
         let longest = max(w, h)
         if longest > cap { let k = cap / longest; w *= k; h *= k; dpi *= k }
-        let px = CGSize(width: max(240, (w / 8).rounded() * 8), height: max(240, (h / 8).rounded() * 8))
+        // 取 8 的倍數時無條件捨去，避免比視窗大幾個像素而被縮放
+        let px = CGSize(width: max(240, (w / 8).rounded(.down) * 8), height: max(240, (h / 8).rounded(.down) * 8))
         return (px, max(80, Int(dpi.rounded())))
     }
 
