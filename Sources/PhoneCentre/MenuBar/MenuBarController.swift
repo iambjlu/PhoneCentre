@@ -101,8 +101,7 @@ struct MenuDeviceSection: View {
                     ForEach(apps, id: \.self) { pkg in
                         VStack(spacing: 3) {
                             AppIconView(catalog: catalog, package: pkg, size: 32)
-                            Capsule().fill(catalog.running.contains(pkg) ? Color.primary.opacity(0.7) : .clear)
-                                .frame(width: 12, height: 3)
+                            RunningMark(running: catalog.running.contains(pkg), current: pkg == catalog.foreground, color: .primary.opacity(0.7))
                         }
                         .contentShape(Rectangle())
                         .onTapGesture { close(); WindowManager.shared.launch(device, package: pkg) }

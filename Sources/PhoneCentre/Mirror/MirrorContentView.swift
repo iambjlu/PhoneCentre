@@ -184,7 +184,7 @@ struct AppRail: View {
         return ZStack {
             AppIconView(catalog: catalog, package: pkg, size: 38)
                 .opacity(dragging ? 0.4 : 1)
-            Capsule().fill(running ? Color.white.opacity(0.8) : .clear).frame(width: 3, height: 12)
+            RunningMark(running: running, current: pkg == catalog.foreground, color: .white.opacity(0.8), vertical: true)
                 .frame(maxWidth: .infinity, alignment: .trailing).padding(.trailing, 3)
         }
         .frame(maxWidth: .infinity)
@@ -214,6 +214,24 @@ struct AppRail: View {
             Divider()
             Button("在獨立視窗開啟") { WindowManager.shared.openApp(catalog.device, package: pkg) }
             Button("強制停止") { Task { await catalog.forceStop(pkg) } }
+        }
+    }
+}
+
+/// 執行中標記：一般是小圓點；目前在手機主螢幕最上層的那個 App 拉長成圓角短線
+struct RunningMark: View {
+    let running: Bool
+    let current: Bool
+    var color: Color = .primary.opacity(0.6)
+    var vertical = false
+
+    var body: some View {
+        if !running {
+            Color.clear.frame(width: 4, height: 4)
+        } else if current {
+            Capsule().fill(color).frame(width: vertical ? 3 : 12, height: vertical ? 12 : 3)
+        } else {
+            Circle().fill(color).frame(width: 4, height: 4)
         }
     }
 }
