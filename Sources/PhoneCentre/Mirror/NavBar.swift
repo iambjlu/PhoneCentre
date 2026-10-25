@@ -338,7 +338,7 @@ struct SideColumn: View {
                     Picker("方向", selection: Binding(get: { model.status.autoRotate ? -1 : model.status.userRotation },
                                                     set: { if $0 >= 0 { model.setRotation($0) } })) {
                         ForEach([(0, "直向", 0.0), (1, "橫向（向左）", 90.0), (2, "直向（倒立）", 180.0), (3, "橫向（向右）", 270.0)], id: \.0) { r in
-                            Label { Text(r.1) } icon: { rotatedSymbol("iphone", degrees: r.2) }.tag(r.0)
+                            Label { Text(r.1) } icon: { rotatedSymbol("iphone.gen1", degrees: r.2) }.tag(r.0)
                         }
                     }
                     .pickerStyle(.inline)
