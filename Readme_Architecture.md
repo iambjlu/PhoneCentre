@@ -81,7 +81,7 @@ Sources/PhoneCentre/           Swift 原始碼（下面各章節）
 - 遠端 PhoneCentre：新增主機（名稱、主機、port、密碼）、Bonjour（`_phonecentre._tcp`）瀏覽區域網路上的 PhoneCentre、管理已加入的主機（重連、編輯 `RemoteHostEditSheet`、移除）。
 
 ### DeviceOverview.swift
-裝置總覽：最上面是 `PinnedAppsStrip`（「喜好項目」與「已開啟」各自獨立一排，點了依啟動台設定開啟，右鍵可加入／移除喜好項目）、鏡像畫面、桌面模式(Beta)、安裝 APK、設定解鎖密碼、裝置資訊（型號、Android 版本、螢幕、電池、儲存空間、序號；序號預設隱藏（標題旁的 USB／無線位址照常顯示），按眼睛按鈕顯示／隱藏）、拖放區（APK 安裝；照片影片存相機膠卷；其他存 Download），以。
+裝置總覽：最上面是 `PinnedAppsStrip`（「喜好項目」與「已開啟」各自獨立一排，點了依啟動台設定開啟，右鍵可加入／移除喜好項目）、鏡像畫面、桌面模式(Beta)、安裝 APK、設定解鎖密碼、裝置資訊（型號、Android 版本、螢幕、電池、儲存空間、序號；序號預設隱藏（標題旁的 USB／無線位址照常顯示），按眼睛按鈕顯示／隱藏）、拖放區（APK 安裝；照片影片存相機膠卷；其他存「下載項目」＝手機的 `/sdcard/Download`）。
 
 ## Sources/PhoneCentre/ADB
 

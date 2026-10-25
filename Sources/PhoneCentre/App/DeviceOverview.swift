@@ -55,7 +55,7 @@ struct DeviceOverview: View {
                     .strokeBorder(style: StrokeStyle(lineWidth: 2, dash: [6]))
                     .foregroundStyle(dropTargeted ? Color.accentColor : .secondary.opacity(0.4))
                     .frame(height: 90)
-                    .overlay(Text(message.isEmpty ? "把檔案拖到這裡：APK 會安裝、照片影片存到相機膠卷、其他存到 Download" : message)
+                    .overlay(Text(message.isEmpty ? "把檔案拖到這裡：APK 會安裝、照片影片存到相機膠卷、其他存到「下載項目」資料夾" : message)
                         .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).padding())
                     .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
                         loadURLs(providers) { urls in
