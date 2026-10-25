@@ -55,6 +55,7 @@ Sources/PhoneCentre/           Swift 原始碼（下面各章節；PhoneData 為
 ### AppSettings.swift
 - `SettingsData`：所有可同步的設定（Codable）。讀檔時以預設值補齊缺少的欄位，舊設定檔也能讀。
 - `AppSettings`：`@dynamicMemberLookup`，`settings.keepAlive` 直接讀寫 `data.keepAlive`；SwiftUI 綁定用 `$settings.data.xxx`。
+- 跨程序同步：主程式與每個 Dock 獨立視窗各是一個程序，每 1.5 秒檢查 UserDefaults suite 有沒有被別的程序改過，有就載入（在獨立視窗加入的喜好項目，主程式的總覽、啟動台馬上看得到，不會互相蓋掉）。
 - 儲存位置：預設在 UserDefaults suite `com.iambjlu.PhoneCentre.shared`（固定 suite，Dock 獨立視窗的子程序 bundle id 不同也讀得到）；可在設定選一個資料夾（例如 iCloud Drive），設定寫進該資料夾的 `settings.json`，每 3 秒偵測其他電腦改過的檔案並重新載入。資料夾路徑與自訂 adb 路徑只存在本機。
 - 密碼（手機解鎖密碼、分享密碼、遠端主機密碼）存在鑰匙圈；開啟「密碼也存到這個資料夾」時另外以明碼寫入 `settings.json` 的 `secrets`，另一台 Mac 讀到後會存回自己的鑰匙圈。
 - 列舉：`DockMode`（共用／每個視窗各自一個 Dock 圖示）、`AppLaunchTarget`（主螢幕／獨立視窗）、`KeyboardMode`（實體按鍵／Mac 輸入法）、`CacheClearPolicy`（斷線清除／幾天沒連線清除／只依容量）。

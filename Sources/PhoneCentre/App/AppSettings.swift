@@ -101,6 +101,9 @@ final class AppSettings: ObservableObject {
     @Published private(set) var settingsFolder: URL?
 
     private var lastFileDate: Date?
+    /// 最後一次寫入或讀進來的 UserDefaults 內容：用來發現「另一個程序」（主程式與 Dock 獨立視窗各是一個程序）改了設定
+    private var lastSuiteRaw: Data?
+    private var suiteTimer: Timer?
     private var watchTimer: Timer?
 
     subscript<T>(dynamicMember kp: WritableKeyPath<SettingsData, T>) -> T {
@@ -115,7 +118,9 @@ final class AppSettings: ObservableObject {
         settingsFolder = ChildMode.isChild ? nil : d.string(forKey: "settingsFolder").map { URL(fileURLWithPath: $0, isDirectory: true) }
         data = SettingsData()
         data = loadData() ?? SettingsData()
+        lastSuiteRaw = d.data(forKey: "settings")
         startWatching()
+        startSuiteWatching()
     }
 
     // MARK: 釘選 App
@@ -160,9 +165,22 @@ final class AppSettings: ObservableObject {
         if !out.syncSecrets { out.secrets = [:] }
         guard let raw = try? enc.encode(out) else { return }
         d.set(raw, forKey: "settings")
+        lastSuiteRaw = raw
         if let f = settingsFile {
             try? raw.write(to: f, options: .atomic)
             lastFileDate = (try? f.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+        }
+    }
+
+    /// 偵測其他程序改了設定：在 Dock 獨立視窗（另一個程序）裡加入的喜好項目等，主程式要馬上看得到，
+    /// 反過來也一樣；否則兩邊各存各的，後存的還會蓋掉先存的
+    private func startSuiteWatching() {
+        suiteTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+            guard let self, let raw = self.d.data(forKey: "settings"), raw != self.lastSuiteRaw else { return }
+            self.lastSuiteRaw = raw
+            guard var new = Self.decodeMerged(raw), new != self.data else { return }
+            if !new.syncSecrets { new.secrets = self.data.secrets }
+            self.data = new
         }
     }
 
