@@ -331,6 +331,7 @@ struct SideColumn: View {
                     }
                     Divider()
                     Toggle("自動旋轉", isOn: Binding(get: { model.status.autoRotate }, set: { model.setAutoRotate($0) }))
+                    Toggle("強制所有 App 使用這個方向", isOn: Binding(get: { model.status.forceOrientation }, set: { model.setForceOrientation($0) }))
                 }
             }
             if !model.isVirtualDisplay {

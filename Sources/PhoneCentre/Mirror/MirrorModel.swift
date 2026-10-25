@@ -601,6 +601,17 @@ final class MirrorModel: ObservableObject {
         Task { _ = try? await c.shell("settings put system accelerometer_rotation 0; settings put system user_rotation \(r)") }
     }
 
+    /// 強制所有 App 使用設定的方向：忽略 App 自己要求的方向（例如只支援直向的 App 也會跟著轉），
+    /// 並讓畫面固定跟著使用者設定的旋轉。關閉就恢復各 App 自己決定。
+    func setForceOrientation(_ on: Bool) {
+        showChange("正在變更方向…")
+        status.forceOrientation = on
+        let c = device.client
+        Task {
+            _ = try? await c.shell("wm set-ignore-orientation-request \(on ? "true" : "false"); wm fixed-to-user-rotation \(on ? "enabled" : "default")")
+        }
+    }
+
     func setAutoRotate(_ on: Bool) {
         status.autoRotate = on
         let c = device.client

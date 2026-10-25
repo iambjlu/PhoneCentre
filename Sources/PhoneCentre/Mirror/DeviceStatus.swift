@@ -23,6 +23,8 @@ struct DeviceStatus: Equatable {
     var wifiLevel = 0              // 0...4
     var autoRotate = true
     var userRotation = 0           // 0...3，對應 0°／90°／180°／270°
+    /// 強制所有 App 使用設定的方向（忽略 App 自己要求的方向）
+    var forceOrientation = false
 
     // 以下給「總覽 → 裝置資訊」用
     /// 電池狀態碼（BatteryManager.BATTERY_STATUS_*）：2 充電中、3 放電中、4 插著但沒在充、5 已充飽；-1 未知
@@ -59,6 +61,7 @@ struct DeviceStatus: Equatable {
     echo '@@sys'; for f in cycle_count battery_cycle fg_cycle charge_full_design fg_fullcapnom charge_full; do echo "$f=$(cat /sys/class/power_supply/battery/$f 2>/dev/null)"; done
     echo '@@mfg'; getprop ril.rfcal_date
     echo '@@rot'; settings get system accelerometer_rotation; settings get system user_rotation
+    echo '@@force'; wm get-ignore-orientation-request 2>/dev/null
     """
 
     static func fetch(_ c: AdbClient) async -> DeviceStatus? {
@@ -122,6 +125,7 @@ struct DeviceStatus: Equatable {
         s.batteryDesignMah = mah(sys["charge_full_design"])
         s.batteryMaxMah = mah(sys["fg_fullcapnom"]) ?? mah(sys["charge_full"])
         s.manufactureDate = (sections["mfg"]?.first ?? "").trimmingCharacters(in: .whitespaces)
+        s.forceOrientation = (sections["force"] ?? []).contains { $0.contains("true") }
         let rot = sections["rot"] ?? []
         if rot.count >= 1 { s.autoRotate = rot[0].trimmingCharacters(in: .whitespaces) != "0" }
         if rot.count >= 2 { s.userRotation = Int(rot[1].trimmingCharacters(in: .whitespaces)) ?? 0 }
