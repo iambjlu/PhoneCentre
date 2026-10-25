@@ -14,12 +14,19 @@ private enum NotificationScope: String, CaseIterable, Identifiable {
 struct PhoneDataView: View {
     let device: Device
     let kind: DataKind
+    @ObservedObject private var catalog: AppCatalog
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var store = PhoneDataStore.shared
     @State private var scope: NotificationScope = .active
     @State private var query = ""
     @State private var showOngoing = false
     @State private var confirmDelete = false
+
+    init(device: Device, kind: DataKind) {
+        self.device = device
+        self.kind = kind
+        _catalog = ObservedObject(wrappedValue: DeviceManager.shared.catalog(for: device))
+    }
 
     var body: some View {
         if !settings.phoneDataEnabled {
@@ -31,12 +38,17 @@ struct PhoneDataView: View {
                 Button("開啟") { settings.data.phoneDataEnabled = true }
                     .buttonStyle(.borderedProminent).controlSize(.large)
             }
+            .padding(28)
+            .glassCard(cornerRadius: 24)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             let b = store.bundle(for: device)
-            VStack(spacing: 0) {
+            VStack(spacing: 12) {
                 header(b)
-                Divider()
+                    .padding(12)
+                    .liquidPanel(cornerRadius: 18)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
                 content(b)
             }
             .task(id: device.id) { await store.sync(device) }
@@ -78,7 +90,6 @@ struct PhoneDataView: View {
                     .onChange(of: retentionDays.wrappedValue) { _, _ in store.prune() }
             }
         }
-        .padding(12)
     }
 
     /// 這個分頁對應的保存天數設定（和「設定 → 儲存」同一份）
@@ -103,26 +114,33 @@ struct PhoneDataView: View {
                 .sorted { ($0.clearedAt ?? $0.firstSeen) > ($1.clearedAt ?? $1.firstSeen) }
             if list.isEmpty { empty(scope == .active ? "目前手機上沒有通知" : "沒有已清除的通知") }
             else {
-                List(list) { n in
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack {
-                            Text(n.package).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                            Spacer()
-                            Text(n.firstSeen.formatted(date: .abbreviated, time: .shortened)
-                                 + (n.clearedAt.map { "　清除於 " + $0.formatted(date: .omitted, time: .shortened) } ?? ""))
-                                .font(.caption).foregroundStyle(.secondary)
+                glassList(list) { n in
+                    HStack(alignment: .top, spacing: 10) {
+                        AppIconView(catalog: catalog, package: n.package, size: 36)
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack {
+                                Text(catalog.label(for: n.package)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                Spacer()
+                                Text(n.firstSeen.formatted(date: .abbreviated, time: .shortened)
+                                     + (n.clearedAt.map { "　清除於 " + $0.formatted(date: .omitted, time: .shortened) } ?? ""))
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            if !n.title.isEmpty { Text(n.title).font(.headline) }
+                            if !n.text.isEmpty { Text(n.text).textSelection(.enabled) }
                         }
-                        if !n.title.isEmpty { Text(n.title).font(.headline) }
-                        if !n.text.isEmpty { Text(n.text).textSelection(.enabled) }
                     }
                     .padding(.vertical, 3)
+                }
+                .task(id: Set(list.map(\.package))) {
+                    if catalog.apps.isEmpty { await catalog.reload() }
+                    catalog.loadIcons(Array(Set(list.map(\.package))))
                 }
             }
         case .sms:
             let list = b.sms.filter { matches($0.address, $0.body) }.sorted { $0.date > $1.date }
             if list.isEmpty { empty("沒有簡訊") }
             else {
-                List(list) { m in
+                glassList(list) { m in
                     VStack(alignment: .leading, spacing: 3) {
                         HStack {
                             Image(systemName: m.isSent ? "arrow.up.right" : "arrow.down.left").foregroundStyle(.secondary)
@@ -139,7 +157,7 @@ struct PhoneDataView: View {
             let list = b.calls.filter { matches($0.name, $0.number) }.sorted { $0.date > $1.date }
             if list.isEmpty { empty("沒有通話記錄") }
             else {
-                List(list) { c in
+                glassList(list) { c in
                     HStack {
                         Image(systemName: c.symbol).foregroundStyle(c.isMissed ? .red : .secondary).frame(width: 24)
                         VStack(alignment: .leading) {
@@ -157,6 +175,22 @@ struct PhoneDataView: View {
                     .padding(.vertical, 2)
                 }
             }
+        }
+    }
+
+    /// 每一列是一張液態玻璃卡片
+    private func glassList<T: Identifiable, R: View>(_ items: [T], @ViewBuilder row: @escaping (T) -> R) -> some View {
+        ScrollView {
+            LazyVStack(spacing: 8) {
+                ForEach(items) { item in
+                    row(item)
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .glassCard(cornerRadius: 16)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 12)
         }
     }
 
