@@ -29,7 +29,30 @@ enum AdbLocator {
         for dir in (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":") {
             candidates.append("\(dir)/adb")
         }
-        return candidates.first { fm.isExecutableFile(atPath: $0) }
+        return candidates.first { fm.isExecutableFile(atPath: $0) && isRunnable($0) }
+    }
+
+    /// 這個 adb 能不能在這台 Mac 上執行。舊版 platform-tools 只有 Intel 版，沒裝 Rosetta 的 Apple 晶片 Mac 會
+    /// 出現「bad CPU type in executable」，這種就跳過，改用 PhoneCentre 下載的新版（Intel＋Apple 晶片通用）。
+    private static var runnableCache: [String: Bool] = [:]
+    private static func isRunnable(_ path: String) -> Bool {
+        if let c = runnableCache[path] { return c }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: path)
+        p.arguments = ["version"]
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
+        var ok = false
+        do {
+            try p.run()
+            let deadline = Date().addingTimeInterval(4)
+            while p.isRunning, Date() < deadline { Thread.sleep(forTimeInterval: 0.02) }
+            if p.isRunning { p.terminate() } else { ok = p.terminationStatus == 0 }
+        } catch {
+            ok = false
+        }
+        runnableCache[path] = ok
+        return ok
     }
 
     /// 下載並解壓 platform-tools，回傳 adb 路徑

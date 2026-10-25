@@ -86,7 +86,7 @@ Sources/PhoneCentre/           Swift 原始碼（下面各章節）
 ## Sources/PhoneCentre/ADB
 
 ### AdbLocator.swift
-尋找 adb：自訂路徑 → PhoneCentre 下載的 → `$ANDROID_HOME` → `~/Library/Android/sdk` → Homebrew → PATH。
+尋找 adb：自訂路徑 → PhoneCentre 下載的 → `$ANDROID_HOME` → `~/Library/Android/sdk` → Homebrew → PATH。每個候選都先試跑 `adb version`，跑不起來的（例如舊版只有 Intel 版、又沒裝 Rosetta：`bad CPU type in executable`）直接跳過，全部都不行就顯示一鍵下載（Google 目前的 platform-tools 是 Intel＋Apple 晶片通用）。
 找不到時 `install()` 從 `dl.google.com` 下載 platform-tools，以 `ditto` 解壓到 `~/Library/Application Support/PhoneCentre/platform-tools` 並移除隔離屬性。adb 不隨 App 散布（Android SDK 授權條款）。
 
 ### AdbSocket.swift
