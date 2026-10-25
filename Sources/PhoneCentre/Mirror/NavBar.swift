@@ -263,6 +263,11 @@ struct SideColumn: View {
     @Binding var showLocation: Bool
     @State private var showLauncher = false
     @State private var showSound = false
+    // 右側欄分配空間用的量測（高度）
+    @State private var currentH: CGFloat = 0
+    @State private var othersNatural: CGFloat = 0
+    @State private var navItemsNatural: CGFloat = 0
+    @State private var keysH: CGFloat = 0
     @ObservedObject private var location = LocationSimulation.shared
 
     var body: some View {
@@ -272,7 +277,9 @@ struct SideColumn: View {
                 // 主螢幕：點狀態環降下通知中心
                 .onTapGesture { if !model.isVirtualDisplay { model.session?.send(.expandNotifications) } }
             glassGroup {
-                VStack(spacing: 8) {
+                GeometryReader { geo in
+                  let alloc = allocate(geo.size.height)
+                  VStack(spacing: 8) {
                     if model.isAppWindow, let pkg = model.appPackage {
                         // 獨立視窗：在欄位正中間顯示目前的 App
                         Spacer(minLength: 0)
@@ -289,17 +296,21 @@ struct SideColumn: View {
                         Spacer(minLength: 0)
                     } else {
                         // 現在正在用的 App：獨立一塊盤子，完整顯示、不捲動；其他已開啟的與喜好項目另一塊，空間不夠時先縮小
-                        AppRail(catalog: catalog, part: .current) { pkg in model.launch(pkg) }.layoutPriority(2)
-                        AppRail(catalog: catalog, part: .others) { pkg in model.launch(pkg) }.layoutPriority(0)
+                        AppRail(catalog: catalog, part: .current) { pkg in model.launch(pkg) }
+                            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { currentH = $0 }
+                        AppRail(catalog: catalog, part: .others, fixedHeight: alloc.others, onNatural: { othersNatural = $0 }) { pkg in model.launch(pkg) }
                         Spacer(minLength: 0)
                     }
-                    // 導覽列：金剛三鍵（返回、主畫面、多工）固定在最下面，其他項目空間不夠時縮小並可捲動
+                    // 導覽列：金剛三鍵（返回、主畫面、多工）固定在最下面；導覽項目的優先權比「其他」高，
+                    // 空間不夠時先縮「其他」，縮到只剩三個圖示還不夠才輪到導覽項目縮小並可捲動
                     VStack(spacing: 1) {
-                        ShrinkScroll { navItems }
+                        ShrinkScroll(fixedHeight: alloc.nav, onNatural: { navItemsNatural = $0 }) { navItems }
                         Divider().padding(.horizontal, 10).padding(.vertical, 2).opacity(0.4)
-                        navKeys
+                        navKeys.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { keysH = $0 }
                     }
                     .padding(.vertical, 6).liquidPanel()
+                  }
+                  .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
                 }
             }
         }
@@ -307,6 +318,24 @@ struct SideColumn: View {
         .padding(.bottom, 8)
         .environment(\.colorScheme, .dark)
         .background { GlassBackground() }
+    }
+
+    /// 空間分配：導覽項目優先；「其他」盤子最少留三個圖示
+    private func allocate(_ H: CGFloat) -> (others: CGFloat?, nav: CGFloat?) {
+        let gap: CGFloat = 8
+        let navChrome = keysH + 5 + 2 + 12            // 金剛三鍵＋分隔線＋間距＋盤子上下留白
+        guard navItemsNatural > 0, keysH > 0 else { return (nil, nil) }
+        let hasCurrent = !model.isAppWindow && currentH > 0
+        let avail = H - (hasCurrent ? currentH + gap : 0)
+        if model.isAppWindow || othersNatural <= 0 {
+            return (nil, max(36, min(navItemsNatural, avail - navChrome - (model.isAppWindow ? 90 : 0))))
+        }
+        let navTotal = navItemsNatural + navChrome
+        if othersNatural + gap + navTotal <= avail { return (othersNatural, navItemsNatural) }
+        let minOthers = min(othersNatural, 3 * 38 + 2 * 10 + 20)    // 三個圖示
+        let others = min(othersNatural, max(minOthers, avail - gap - navTotal))
+        let nav = max(36, min(navItemsNatural, avail - gap - others - navChrome))
+        return (others, nav)
     }
 
     @ViewBuilder private func glassGroup<C: View>(@ViewBuilder _ content: () -> C) -> some View {

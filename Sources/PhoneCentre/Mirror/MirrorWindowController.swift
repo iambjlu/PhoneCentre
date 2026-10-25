@@ -104,6 +104,9 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
     private func fit(to size: CGSize) {
         guard let window, size.width > 0, size.height > 0 else { return }
         window.title = model.title
+        // 主螢幕鏡像直向時，視窗高度不能比這個小（右側欄的圖示才放得下）；橫向沿用一般的最小高度
+        let portraitMin = window.contentRect(forFrameRect: NSRect(x: 0, y: 0, width: 1, height: MirrorLayout.portraitMinFrameHeight)).height
+        window.contentMinSize.height = (!model.isVirtualDisplay && size.height >= size.width) ? portraitMin : MirrorLayout.minContentHeight
         // 虛擬顯示器的大小是依視窗決定的，使用者調整過後就不要反過來改視窗
         if model.isVirtualDisplay && userResized { return }
         let screen = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero

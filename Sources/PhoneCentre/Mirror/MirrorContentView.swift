@@ -12,6 +12,8 @@ enum MirrorLayout {
     static let railWidth: CGFloat = 76
     static let toolbarHeight: CGFloat = 0
     static let minContentHeight: CGFloat = 560
+    /// 主螢幕鏡像在直向時的視窗最小高度（含標題列；量測使用中的鏡像視窗：357×621）
+    static let portraitMinFrameHeight: CGFloat = 621
 }
 
 /// 鏡像視窗內容：手機畫面 ＋ 右側欄（狀態指示 + App 列 + 導覽列）
@@ -142,6 +144,9 @@ struct AppRail: View {
 
     @ObservedObject var catalog: AppCatalog
     var part: Part = .current
+    /// 「其他」盤子的高度與自然高度（由右側欄統一分配空間）
+    var fixedHeight: CGFloat?
+    var onNatural: ((CGFloat) -> Void)?
     let onTap: (String) -> Void
     @ObservedObject private var settings = AppSettings.shared
     @State private var dragPkg: String?
@@ -159,7 +164,7 @@ struct AppRail: View {
             if let current { railIcon(current, running: true).padding(.vertical, 10).liquidPanel() }
         case .others:
             if !otherOpened.isEmpty || !order.unopened.isEmpty {
-                ShrinkScroll { othersList }.liquidPanel()
+                ShrinkScroll(fixedHeight: fixedHeight, onNatural: onNatural) { othersList }.liquidPanel()
             }
         }
     }
@@ -234,6 +239,10 @@ struct RunningMark: View {
 
 /// 內容多高就最多多高；空間不夠時縮短並可捲動（捲軸隱藏，放不下時上下有小箭頭可以按）
 struct ShrinkScroll<Content: View>: View {
+    /// 指定高度（由外面統一分配空間時使用）；nil 就是內容多高最多多高、空間不夠自動縮短
+    var fixedHeight: CGFloat?
+    /// 回報內容的自然高度，外面才能算要怎麼分配空間
+    var onNatural: ((CGFloat) -> Void)?
     @ViewBuilder let content: () -> Content
     @State private var height: CGFloat = 0
 
@@ -243,8 +252,9 @@ struct ShrinkScroll<Content: View>: View {
                 Color.clear.preference(key: ShrinkScrollHeightKey.self, value: g.size.height)
             })
         }
-        .onPreferenceChange(ShrinkScrollHeightKey.self) { height = $0 }
-        .frame(maxHeight: height > 0 ? height : nil)
+        .onPreferenceChange(ShrinkScrollHeightKey.self) { height = $0; onNatural?($0) }
+        .frame(height: fixedHeight)
+        .frame(maxHeight: fixedHeight == nil && height > 0 ? height : nil)
         .frame(minHeight: 36)
     }
 }
