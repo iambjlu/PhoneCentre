@@ -6,7 +6,7 @@ enum DataKind: String, CaseIterable, Identifiable {
 }
 
 private enum NotificationScope: String, CaseIterable, Identifiable {
-    case active = "還在手機上", cleared = "已清除"
+    case active = "現在", all = "所有"
     var id: String { rawValue }
 }
 
@@ -105,11 +105,11 @@ struct PhoneDataView: View {
         switch kind {
         case .notifications:
             let list = b.notifications
-                .filter { scope == .active ? $0.isActive : !$0.isActive }
+                .filter { scope == .all || $0.isActive }
                 .filter { showOngoing || !$0.ongoing }
                 .filter { matches($0.title, $0.text, $0.package) }
                 .sorted { ($0.clearedAt ?? $0.firstSeen) > ($1.clearedAt ?? $1.firstSeen) }
-            if list.isEmpty { empty(scope == .active ? "目前手機上沒有通知" : "沒有已清除的通知") }
+            if list.isEmpty { empty(scope == .active ? "目前手機上沒有通知" : "沒有通知") }
             else {
                 listPanel(list) { n in
                     HStack(alignment: .top, spacing: 10) {
