@@ -119,11 +119,11 @@ struct PhoneDataView: View {
                         AppIconView(catalog: catalog, package: n.package, size: 36)
                         VStack(alignment: .leading, spacing: 3) {
                             HStack {
-                                Text(catalog.label(for: n.package)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                Text(catalog.label(for: n.package)).font(.subheadline.weight(.semibold)).foregroundStyle(.primary.opacity(0.8)).lineLimit(1)
                                 Spacer()
                                 Text(n.firstSeen.formatted(date: .abbreviated, time: .shortened)
                                      + (n.clearedAt.map { "　清除於 " + $0.formatted(date: .omitted, time: .shortened) } ?? ""))
-                                    .font(.caption).foregroundStyle(.secondary)
+                                    .font(.subheadline).foregroundStyle(.primary.opacity(0.7))
                             }
                             if !n.title.isEmpty { Text(n.title).font(.headline) }
                             if !n.text.isEmpty { Text(n.text).textSelection(.enabled) }
