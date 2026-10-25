@@ -160,15 +160,8 @@ struct MainView: View {
         } else if let id = selection, let d = dm.device(id: id) {
             if d.isOnline {
                 VStack(spacing: 0) {
-                    Picker("", selection: $tab) {
-                        ForEach(DeviceTab.allCases) { Label($0.rawValue, systemImage: $0.symbol).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .frame(maxWidth: 480)
-                    .padding(6)
-                    .glassShape(Capsule())
-                    .padding(10)
+                    TabBar(selection: $tab)
+                        .padding(10)
                     Divider()
                     switch tab {
                     case .overview: DeviceOverview(device: d)
@@ -275,4 +268,28 @@ struct WindowBlur: NSViewRepresentable {
         return v
     }
     func updateNSView(_ v: NSVisualEffectView, context: Context) {}
+}
+
+/// 玻璃分頁列：整條是一塊液態玻璃，選到的項目用淡色膠囊標示（不再疊原生分段控制的外框）
+struct TabBar: View {
+    @Binding var selection: DeviceTab
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(DeviceTab.allCases) { t in
+                Button { selection = t } label: {
+                    Text(t.rawValue)
+                        .font(.callout.weight(.medium))
+                        .padding(.horizontal, 14).padding(.vertical, 5)
+                        .frame(maxWidth: .infinity)
+                        .background(Capsule().fill(Color.primary.opacity(selection == t ? 0.2 : 0)))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(3)
+        .frame(maxWidth: 380)
+        .glassShape(Capsule())
+    }
 }
