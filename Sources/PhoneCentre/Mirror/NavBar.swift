@@ -303,14 +303,18 @@ struct SideColumn: View {
                         AppRail(catalog: catalog, part: .current, horizontal: true, showName: barWidth > 900) { pkg in model.launch(pkg) }
                         AppRail(catalog: catalog, part: .others, horizontal: true) { pkg in model.launch(pkg) }
                     }
-                    // 導覽項目：長度適中就好（不撐滿），放不下才捲動；金剛三鍵固定在最右邊
-                    FitScroll(axis: .horizontal) { navItems }
-                        .liquidPanel()
-                        .layoutPriority(1)
-                        .disabled(model.appClosed).opacity(model.appClosed ? 0.4 : 1)
+                    // 導覽項目與金剛三鍵放在最右邊同一塊盤子裡，中間只用分隔線隔開；
+                    // 項目長度適中就好（不撐滿），放不下才捲動，金剛三鍵固定在最右邊
                     Spacer(minLength: 0)
-                    navKeys.padding(.horizontal, 4).liquidPanel()
-                        .disabled(model.appClosed).opacity(model.appClosed ? 0.4 : 1)
+                    HStack(spacing: 6) {
+                        FitScroll(axis: .horizontal) { navItems }
+                        Rectangle().fill(Color.primary.opacity(0.35)).frame(width: 1, height: 28)
+                        navKeys
+                    }
+                    .padding(.horizontal, 6)
+                    .liquidPanel()
+                    .layoutPriority(1)
+                    .disabled(model.appClosed).opacity(model.appClosed ? 0.4 : 1)
                 }
             }
         }
