@@ -137,22 +137,7 @@ struct PhoneDataView: View {
                 }
             }
         case .sms:
-            let list = b.sms.filter { matches($0.address, $0.body) }.sorted { $0.date > $1.date }
-            if list.isEmpty { empty("沒有簡訊") }
-            else {
-                glassList(list) { m in
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack {
-                            Image(systemName: m.isSent ? "arrow.up.right" : "arrow.down.left").foregroundStyle(.secondary)
-                            Text(m.address).font(.headline)
-                            Spacer()
-                            Text(m.date.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(.secondary)
-                        }
-                        Text(m.body).textSelection(.enabled)
-                    }
-                    .padding(.vertical, 3)
-                }
-            }
+            PhoneSMSView(messages: b.sms, query: query)
         case .calls:
             let list = b.calls.filter { matches($0.name, $0.number) }.sorted { $0.date > $1.date }
             if list.isEmpty { empty("沒有通話記錄") }
