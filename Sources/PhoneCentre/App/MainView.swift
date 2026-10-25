@@ -24,7 +24,6 @@ struct MainView: View {
     @State private var selection: String?
     @State private var tab: DeviceTab = .overview
     @State private var showAdd = false
-    @State private var detailWidth: CGFloat = 800
     @State private var editingHost: RemoteHost?
 
     var body: some View {
@@ -166,33 +165,23 @@ struct MainView: View {
             AdbSetupView()
         } else if let id = selection, let d = dm.device(id: id) {
             if d.isOnline {
-                // 分頁：標準的分段選擇器放在工具列下方（跟內容同寬，用最新 SDK 連結後由系統畫成玻璃藥丸）。
+                // 分頁：標準的分段選擇器放在工具列（用最新 SDK 連結後由系統畫成玻璃膠囊）。
                 // 內容只建立目前選到的分頁（其他分頁不用先載入縮圖、檔案列表）
-                VStack(spacing: 0) {
-                    FullWidthSegmentedControl(labels: DeviceTab.allCases.map(\.rawValue),
-                                              selection: Binding(get: { DeviceTab.allCases.firstIndex(of: tab) ?? 0 },
-                                                                 set: { tab = DeviceTab.allCases[$0] }))
-                    .padding(5)
-                    .glassCapsule()
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    Group {
-                        switch tab {
-                        case .overview: DeviceOverview(device: d)
-                        case .launchpad: LaunchpadView(device: d, catalog: dm.catalog(for: d))
-                        case .files: FileBrowserView(device: d).id(d.id)
-                        case .photos: CameraRollView(device: d).id(d.id)
-                        case .notifications: PhoneDataView(device: d, kind: .notifications).id(d.id)
-                        case .sms: PhoneDataView(device: d, kind: .sms).id(d.id)
-                        case .calls: PhoneDataView(device: d, kind: .calls).id(d.id)
-                        }
+                Group {
+                    switch tab {
+                    case .overview: DeviceOverview(device: d)
+                    case .launchpad: LaunchpadView(device: d, catalog: dm.catalog(for: d))
+                    case .files: FileBrowserView(device: d).id(d.id)
+                    case .photos: CameraRollView(device: d).id(d.id)
+                    case .notifications: PhoneDataView(device: d, kind: .notifications).id(d.id)
+                    case .sms: PhoneDataView(device: d, kind: .sms).id(d.id)
+                    case .calls: PhoneDataView(device: d, kind: .calls).id(d.id)
                     }
-                    .softScrollEdge()
                 }
+                .softScrollEdge()
                 .navigationTitle(d.displayName)
                 .navigationSubtitle(d.subtitle)
-                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { detailWidth = $0 }
-                .modifier(DeviceToolbar(device: d, width: detailWidth))
+                .modifier(DeviceToolbar(device: d, tab: $tab))
             } else {
                 ContentUnavailableView(d.displayName, systemImage: "exclamationmark.triangle", description: Text(d.stateDescription))
             }
@@ -282,15 +271,25 @@ extension View {
 }
 
 
-/// 工具列：隱藏系統標題，名稱與副標題自己畫（靠左，比系統預設再往右一點）
+/// 工具列：隱藏系統標題，名稱與副標題自己畫（靠左、不要玻璃底，比系統預設再往右一點）；
+/// 分頁是系統原生的分段選擇器（工具列項目，系統自動畫成液態玻璃膠囊），放在中間
 private struct DeviceToolbar: ViewModifier {
     let device: Device
-    let width: CGFloat
+    @Binding var tab: DeviceTab
 
     func body(content: Content) -> some View {
         content
             .toolbar(removing: .title)
             .toolbar { titleItem }
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Picker("", selection: $tab) {
+                        ForEach(DeviceTab.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                }
+            }
     }
 
     private var titleView: some View {
@@ -298,16 +297,14 @@ private struct DeviceToolbar: ViewModifier {
             Text(device.displayName).font(.headline).lineLimit(1)
             Text(device.subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
         }
-        .padding(.leading, 14)
-        .frame(width: max(width - 24, 300), alignment: .leading)
+        .padding(.leading, 8)
     }
 
-    /// 名稱不要系統給工具列項目的液態玻璃底
     @ToolbarContentBuilder private var titleItem: some ToolbarContent {
         if #available(macOS 26.0, *) {
-            ToolbarItem(placement: .principal) { titleView }.sharedBackgroundVisibility(.hidden)
+            ToolbarItem(placement: .navigation) { titleView }.sharedBackgroundVisibility(.hidden)
         } else {
-            ToolbarItem(placement: .principal) { titleView }
+            ToolbarItem(placement: .navigation) { titleView }
         }
     }
 }
@@ -320,36 +317,5 @@ extension View {
         } else {
             self.background(.thinMaterial, in: Capsule())
         }
-    }
-}
-
-/// 系統的分段選擇器（外觀與 `.pickerStyle(.segmented)` 相同），但每一格等寬、整條撐滿可用寬度
-/// （SwiftUI 的 Picker 只會貼著內容寬度，沒辦法撐滿）
-private struct FullWidthSegmentedControl: NSViewRepresentable {
-    let labels: [String]
-    @Binding var selection: Int
-
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
-
-    func makeNSView(context: Context) -> NSSegmentedControl {
-        let c = NSSegmentedControl(labels: labels, trackingMode: .selectOne,
-                                   target: context.coordinator, action: #selector(Coordinator.changed(_:)))
-        c.segmentDistribution = .fillEqually
-        return c
-    }
-
-    func updateNSView(_ c: NSSegmentedControl, context: Context) {
-        context.coordinator.parent = self
-        if c.selectedSegment != selection { c.selectedSegment = selection }
-    }
-
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSSegmentedControl, context: Context) -> CGSize? {
-        CGSize(width: proposal.width ?? nsView.fittingSize.width, height: nsView.fittingSize.height)
-    }
-
-    final class Coordinator: NSObject {
-        var parent: FullWidthSegmentedControl
-        init(_ p: FullWidthSegmentedControl) { parent = p }
-        @objc func changed(_ sender: NSSegmentedControl) { parent.selection = sender.selectedSegment }
     }
 }

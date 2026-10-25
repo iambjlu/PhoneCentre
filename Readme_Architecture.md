@@ -72,7 +72,7 @@ Sources/PhoneCentre/           Swift 原始碼（下面各章節；PhoneData 為
 - `DockLauncher`：在 `~/Library/Application Support/PhoneCentre/Launchers/` 用 APFS clone（`cp -c`）複製一份 .app，改 `CFBundleIdentifier`／`CFBundleName` 後 ad-hoc 重新簽章，再以 `NSWorkspace.openApplication` 帶參數啟動；同一個鍵（裝置＋App）已在執行就直接切過去。主程式更新後副本會重建。複製後會清掉隔離屬性（`xattr -cr`，主程式從別台電腦／AirDrop 來時，帶著隔離屬性的副本會被 Gatekeeper 擋下），簽章失敗會報錯；啟動失敗時重建副本再試一次，仍失敗才改在主程式開視窗。標題中的特殊字元會替換成 `-`。
 
 ### MainView.swift
-主視窗（最小寬度 1160）：標準的 `NavigationSplitView`。工具列只放裝置名稱與副標題（隱藏系統標題，由 `DeviceToolbar` 在 `principal` 項目裡自己畫，靠左並比系統預設再往右一點，寬度用 `onGeometryChange` 量內容區；項目用 `sharedBackgroundVisibility(.hidden)` 去掉系統的玻璃底）；分頁是 `FullWidthSegmentedControl`（包 `NSSegmentedControl`，每格等寬、撐滿寬度）外面包一層膠囊液態玻璃（`glassCapsule`），放在工具列下方、跟內容同寬，不再跟名稱擠在同一列；用最新 SDK 連結後由系統自動套用 Liquid Glass（圓角視窗、側邊欄、工具列按鈕、分頁藥丸）。視窗透明，最底層墊一層 `NSVisualEffectView`（`.underWindowBackground`）當毛玻璃底，SwiftUI 內容不加自訂底色。
+主視窗（最小寬度 1160）：標準的 `NavigationSplitView`；用最新 SDK 連結後由系統自動套用 Liquid Glass（圓角視窗、側邊欄、工具列按鈕、分頁膠囊）。工具列：隱藏系統標題，裝置名稱與副標題由 `DeviceToolbar` 自己畫成 `navigation` 項目（靠左、比系統預設再往右一點、用 `sharedBackgroundVisibility(.hidden)` 去掉玻璃底）；分頁是系統原生的分段選擇器，放在 `principal` 工具列項目，由系統畫成液態玻璃膠囊（不要自製或包玻璃）。視窗透明，最底層墊一層 `NSVisualEffectView`（`.underWindowBackground`）當毛玻璃底，SwiftUI 內容不加自訂底色。
 - 側邊欄：本機裝置（選中的列底色是強調色，`DeviceRow` 由 MainView 傳入是否選中（並參考 `backgroundProminence`）把圖示改白，避免和底色糊在一起）、記住但目前離線的無線裝置（右鍵可立即重連或忘記）、各遠端 PhoneCentre 的裝置（每區標題有連線狀態燈與選單：重新連線、編輯、移除；沒有裝置時顯示狀態與「重新連線」按鈕）；底部顯示 adb server 狀態與最近事件。
 - 內容：分頁「總覽／啟動台／檔案／通知／簡訊／通話記錄／相機膠卷」；找不到 adb 時顯示 `AdbSetupView`（一鍵下載 Google Platform-Tools）。
 
