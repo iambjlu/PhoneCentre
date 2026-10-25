@@ -181,7 +181,7 @@ struct MainView: View {
                 .navigationTitle(d.displayName)
                 .navigationSubtitle(d.subtitle)
                 .toolbar {
-                    ToolbarItem(placement: .principal) {
+                    ToolbarItem(placement: .primaryAction) {
                         Picker("", selection: $tab) {
                             ForEach(DeviceTab.allCases) { Text($0.rawValue).tag($0) }
                         }
