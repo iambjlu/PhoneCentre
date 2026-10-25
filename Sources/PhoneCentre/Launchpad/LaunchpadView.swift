@@ -110,8 +110,8 @@ struct LaunchpadView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 26) {
                     if query.isEmpty {
-                        section("喜好項目", pinnedApps)
-                        section("已開啟", openApps)
+                        section("喜好項目", pinnedApps, singleRow: true)
+                        section("已開啟", openApps, singleRow: true)
                         if !groups.isEmpty, !(pinnedApps.isEmpty && openApps.isEmpty) {
                             Text("所有 App").font(.headline).foregroundStyle(.secondary).padding(.bottom, -12)
                         }
@@ -154,14 +154,21 @@ struct LaunchpadView: View {
     }
 
     @ViewBuilder
-    private func section(_ title: String?, _ apps: [AppEntry], small: Bool = false) -> some View {
+    private func section(_ title: String?, _ apps: [AppEntry], small: Bool = false, singleRow: Bool = false) -> some View {
         if !apps.isEmpty {
             VStack(alignment: .leading, spacing: 14) {
                 if let title {
                     Text(title).font(small ? .subheadline.weight(.semibold) : .headline).foregroundStyle(.secondary)
                 }
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 96, maximum: 120), spacing: 18)], alignment: .leading, spacing: 22) {
-                    ForEach(apps) { cell($0) }
+                if singleRow {
+                    // 喜好項目、已開啟：單排，放不下時左右出現箭頭，按下去捲動一頁
+                    ArrowScroll(axis: .horizontal) {
+                        HStack(spacing: 18) { ForEach(apps) { cell($0) } }
+                    }
+                } else {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 96, maximum: 120), spacing: 18)], alignment: .leading, spacing: 22) {
+                        ForEach(apps) { cell($0) }
+                    }
                 }
             }
         }

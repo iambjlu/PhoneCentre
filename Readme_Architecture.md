@@ -173,7 +173,7 @@ Mac 虛擬 keyCode（與鍵盤配置、輸入法無關）→ Android keycode；�
 手機狀態：一次 shell 取得 `dumpsys battery`（電量、狀態碼、是否接電；「充電中」只看狀態碼 2，沒有狀態碼才看是否接電）、`dumpsys connectivity`（預設網路是 Wi-Fi 還是 MOBILE[LTE] → 4G/5G）、`dumpsys telephony.registry`（有資料連線的那張 SIM，否則第一張；訊號 level 0–4、是否有服務）、`gsm.sim.state`。`MirrorModel` 每 5 秒更新；另含 Wi-Fi RSSI（格數）、自動旋轉與目前鎖定方向。
 
 ### NavBar.swift
-右側欄 `SideColumn`：整條是深色毛玻璃底（`GlassBackground`，視窗透明，桌面透出來），上面疊兩塊圓角液態玻璃面板（`liquidPanel`，macOS 26 用 `glassEffect`＋`GlassEffectContainer`，舊系統用材質）：App 列一塊（釘選＋執行中，高度跟圖示數量，放得下就剛好包住，放不下才捲動；沒有圖示就不畫）、導覽列一塊（獨立視窗沒有 App 列）。上方 `StatusIndicator`（第一次讀到手機狀態（`MirrorModel.statusLoaded`）之前只顯示轉圈圈；外環＝電池，分左右兩段、上方留給電量數字（不加 %）、充電為綠色、≤20% 紅色；中間是較大的 Wi-Fi（依 RSSI 格數）或 4G/5G；訊號格是排在電池環下方缺口、同一個圓上的 4 個點（點與點、點與環端的角度間隔相同）；點一下狀態環（主螢幕）會降下通知中心；電量數字壓在環頂端缺口的正中間，不與環重疊；點與環一起在同一個 Canvas 繪製，大小一致，格數取自三星 `SignalBarInfo`），中間 App 列（獨立視窗改在欄位正中間顯示目前 App 的圖示與名稱），下方導覽列。導覽列由上到下（最下面三顆依序是返回、主畫面、多工）：畫質設定（`environments.circle`）、輸入方式（選單，`keyboard`＝實體按鍵、`keyboard.fill`＝Mac 輸入法）、桌面模式的啟動台、模擬定位、聲音（彈窗，見 `SoundPopover.swift`）、截圖、旋轉（選單：四個角度的 iPhone 圖示（`iphone.gen1`，有 Home 鍵，上下左右一眼就分得出來）（系統的單選 Picker，勾選記號跟開關一樣在左邊；輸入方式選單也是）、自動旋轉開關、「強制所有 App 使用這個方向」開關——`wm set-ignore-orientation-request true` 加 `wm fixed-to-user-rotation enabled`，讓只支援直向／橫向的 App 也照設定的方向，關閉就恢復，狀態來自 `DeviceStatus.forceOrientation`；獨立視窗是旋轉視窗方向）、黑屏與電源（只有主螢幕）、返回、主畫面、多工。獨立視窗的主畫面是「隱藏視窗」（`xmark.square`；視窗 `orderOut`，連線與虛擬顯示器繼續，App 留在原顯示器；從 App 列再開或點 Dock 圖示叫回來）、多工是「強制停止並關閉視窗」（六角形加叉）。多工「|||」、主畫面（圓角方形）、返回「<」是仿 One UI 的自繪圖示。`GlassDivider` 是玻璃面板裡用的分隔線（1pt 前景色線，系統預設的 `Divider` 在玻璃上幾乎看不見；App 列、通知／通話記錄清單、簡訊對話列表都用它）。`glassCard` 是疊在畫面上所有東西（提示、橫幅、已關閉卡片）共用的毛玻璃底。
+右側欄 `SideColumn`：整條是深色毛玻璃底（`GlassBackground`，視窗透明，桌面透出來），上面疊兩塊圓角液態玻璃面板（`liquidPanel`，macOS 26 用 `glassEffect`＋`GlassEffectContainer`，舊系統用材質）：App 列一塊（釘選＋執行中，高度跟圖示數量，放得下就剛好包住，放不下才捲動；沒有圖示就不畫）、導覽列一塊（獨立視窗沒有 App 列；導覽項目空間不夠時縮小並可捲動，金剛三鍵（返回、主畫面、多工）固定在最下面）。上方 `StatusIndicator`（第一次讀到手機狀態（`MirrorModel.statusLoaded`）之前只顯示轉圈圈；外環＝電池，分左右兩段、上方留給電量數字（不加 %）、充電為綠色、≤20% 紅色；中間是較大的 Wi-Fi（依 RSSI 格數）或 4G/5G；訊號格是排在電池環下方缺口、同一個圓上的 4 個點（點與點、點與環端的角度間隔相同）；點一下狀態環（主螢幕）會降下通知中心；電量數字壓在環頂端缺口的正中間，不與環重疊；點與環一起在同一個 Canvas 繪製，大小一致，格數取自三星 `SignalBarInfo`），中間 App 列（獨立視窗改在欄位正中間顯示目前 App 的圖示與名稱），下方導覽列。導覽列由上到下（最下面三顆依序是返回、主畫面、多工）：畫質設定（`environments.circle`）、輸入方式（選單，`keyboard`＝實體按鍵、`keyboard.fill`＝Mac 輸入法）、桌面模式的啟動台、模擬定位、聲音（彈窗，見 `SoundPopover.swift`）、截圖、旋轉（選單：四個角度的 iPhone 圖示（`iphone.gen1`，有 Home 鍵，上下左右一眼就分得出來）（系統的單選 Picker，勾選記號跟開關一樣在左邊；輸入方式選單也是）、自動旋轉開關、「強制所有 App 使用這個方向」開關——`wm set-ignore-orientation-request true` 加 `wm fixed-to-user-rotation enabled`，讓只支援直向／橫向的 App 也照設定的方向，關閉就恢復，狀態來自 `DeviceStatus.forceOrientation`；獨立視窗是旋轉視窗方向）、黑屏與電源（只有主螢幕）、返回、主畫面、多工。獨立視窗的主畫面是「隱藏視窗」（`xmark.square`；視窗 `orderOut`，連線與虛擬顯示器繼續，App 留在原顯示器；從 App 列再開或點 Dock 圖示叫回來）、多工是「強制停止並關閉視窗」（六角形加叉）。多工「|||」、主畫面（圓角方形）、返回「<」是仿 One UI 的自繪圖示。`GlassDivider` 是玻璃面板裡用的分隔線（1pt 前景色線，系統預設的 `Divider` 在玻璃上幾乎看不見；App 列、通知／通話記錄清單、簡訊對話列表都用它）。`glassCard` 是疊在畫面上所有東西（提示、橫幅、已關閉卡片）共用的毛玻璃底。
 
 ### SoundPopover.swift
 聲音彈窗（跟畫質彈窗同一種風格）：
@@ -189,7 +189,7 @@ Mac 虛擬 keyCode（與鍵盤配置、輸入法無關）→ Android keycode；�
 3×3 圖形密碼輸入元件（點編號 1–9）。解鎖密碼儲存為 `pattern:<編號>`；`LockScreenHelper.unlock` 用 `uiautomator dump` 找 `LockPatternView` 的範圍（找不到就用螢幕下半部推測），再用 `input motionevent` 畫出圖形。
 
 ### MirrorContentView.swift
-鏡像視窗內容：畫面在左，右側 `SideColumn`（寬度 `MirrorLayout.railWidth`，毛玻璃，沒有上方工具列）內含 `AppRail`（主鏡像與桌面模式；排序：目前在手機畫面最上層的 App（`catalog.foreground`）→ 已開啟的喜好項目 → 其他已開啟的 App，再來一條分隔線，分隔線之後才是還沒開的喜好項目（不會夾在已開啟的中間；右鍵選單由上到下：強制停止、在獨立視窗開啟、（分隔線）加入／移除喜好項目；App 列、啟動台、總覽三處用的是同一份喜好項目清單，在任何一處加入或移除，其他兩處都會一起變），執行中的右邊有小圓點，只有目前在最上層的那個 App 拉長成圓角短線（`RunningMark`，啟動台、總覽、選單列同樣規則），不再顯示最近使用但已關閉的 App；可把圖示往左或往右拖出 App 列超過距離後放開，就在放開位置以獨立視窗開啟，拖曳時由 `DragGhost` 顯示跟著游標的圖示）、解鎖橫幅、App 已關閉提示（「XXX 已關閉」＋打開按鈕）、鎖定提示、置中的提示訊息與截圖白閃、組字文字。另含 `AppIconView`、`VideoSettingsPopover`（預設檔分段選擇＋影格率／解析度選單＋位元率滑桿）、`LockPasswordSheet`（PIN／密碼或圖形）、`MiniLauncher`、`DragGhost`。
+鏡像視窗內容：畫面在左，右側 `SideColumn`（寬度 `MirrorLayout.railWidth`，毛玻璃，沒有上方工具列）內含 `AppRail`（主鏡像與桌面模式；分成兩塊獨立的液態玻璃盤子：第一塊只放現在正在用的 App（`catalog.foreground`，只有一個，完整顯示、不捲動）；第二塊放其他——已開啟的喜好項目 → 其他已開啟的 App，一條分隔線，分隔線之後才是還沒開的喜好項目（空間不夠時第二塊先縮小，放不下時上下有箭頭可以捲動；排序來自 `AppCatalog.barOrder`；右鍵選單由上到下：強制停止、在獨立視窗開啟、（分隔線）加入／移除喜好項目；App 列、啟動台、總覽三處用的是同一份喜好項目清單，在任何一處加入或移除，其他兩處都會一起變），執行中的右邊有小圓點，只有目前在最上層的那個 App 拉長成圓角短線（`RunningMark`，啟動台、總覽、選單列同樣規則），不再顯示最近使用但已關閉的 App；可把圖示往左或往右拖出 App 列超過距離後放開，就在放開位置以獨立視窗開啟，拖曳時由 `DragGhost` 顯示跟著游標的圖示）、解鎖橫幅、App 已關閉提示（「XXX 已關閉」＋打開按鈕）、鎖定提示、置中的提示訊息與截圖白閃、組字文字。另含 `AppIconView`、`VideoSettingsPopover`（預設檔分段選擇＋影格率／解析度選單＋位元率滑桿）、`LockPasswordSheet`（PIN／密碼或圖形）、`MiniLauncher`、`DragGhost`。
 
 ### MirrorWindowController.swift
 鏡像視窗（主螢幕鏡像與獨立視窗都會記住上次的大小：主螢幕記高度、寬度依手機畫面比例算；視窗透明，只在標題列與右側欄兩塊鋪 `NSVisualEffectView` 毛玻璃，手機畫面區域是黑底、不鋪以省渲染資源）。主螢幕鏡像依畫面比例調整與縮放（保留左側欄空間，內容最小高度 `MirrorLayout.minContentHeight`）；虛擬顯示器視窗可自由調整，放開邊框時請 `MirrorModel` 重建顯示器。虛擬顯示器視窗會記住上次的大小（frame autosave），重開時先還原大小、再依該大小建立虛擬顯示器（`presetDisplay`），不再被影像大小覆蓋；可指定開啟位置，否則錯開排列；App 名稱載入後更新標題；關閉時停止工作階段。
@@ -262,6 +262,9 @@ PhoneCentre 之間的加密通道：Network.framework 的 TLS（PSK，`TLS_PSK_W
 設定視窗分頁：一般（選單列、Dock 模式、啟動台開啟方式）、連線（自動維持連線、記住的無線裝置、adb 路徑與下載）、鏡像（預設畫質、鍵盤模式、剪貼簿同步、音訊與手機靜音、黑屏、Touch ID 解鎖提示）、分享（開關、port、密碼、狀態）、儲存（設定檔資料夾／iCloud Drive、密碼是否同步、簡訊／通知／通話記錄的收集開關與各自的保存天數、快取用量與上限、清除時機、清除快取、清除 Dock 副本）。
 
 ## Sources/PhoneCentre/Support
+
+### ArrowScroll.swift
+隱藏捲軸的捲動區，內容放不下時在可以捲動的那一端出現小箭頭（`chevron.compact.backward` 旋轉出四個方向），按下去捲動一頁（`ScrollPosition`＋`onScrollGeometryChange`）。總覽的喜好項目／已開啟（橫向）、啟動台的喜好項目／已開啟（單排橫向）、鏡像視窗右側欄的還沒開的喜好項目盤子與導覽項目（縱向，經由 `ShrinkScroll`）都用它。
 
 ### Shell.swift
 非同步執行外部程式（邊跑邊讀 stdout/stderr，避免 pipe 塞滿），以及 shell 單引號跳脫。

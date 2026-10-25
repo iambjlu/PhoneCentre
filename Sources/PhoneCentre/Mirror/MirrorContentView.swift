@@ -135,43 +135,42 @@ struct MirrorContentView: View {
     }
 }
 
-/// App 列：已開啟（左邊有點）＋ 最近使用
+/// App 列：兩塊獨立的液態玻璃盤子——「現在正在用的 App」（只有一個，完整顯示、不捲動）與
+/// 「其他」（其他已開啟的 App → 分隔線 → 還沒開的喜好項目；空間不夠時這塊先縮小，放不下有箭頭可以捲動）
 struct AppRail: View {
+    enum Part { case current, others }
+
     @ObservedObject var catalog: AppCatalog
+    var part: Part = .current
     let onTap: (String) -> Void
     @ObservedObject private var settings = AppSettings.shared
     @State private var dragPkg: String?
     /// 往左或往右拖超過這個距離（拖出 App 列）放開才算
     static let tearOffDistance: CGFloat = 70
 
-    /// 液態玻璃面板的高度跟著圖示數量：放得下就剛好包住，放不下才捲動
+    private var order: (opened: [String], unopened: [String]) { catalog.barOrder(pins: settings.pinned(for: catalog.device)) }
+    /// 目前在最上層的 App（barOrder 的第一個已開啟項目）
+    private var current: String? { catalog.foreground.flatMap { order.opened.first == $0 ? $0 : nil } }
+    private var otherOpened: [String] { current == nil ? order.opened : Array(order.opened.dropFirst()) }
+
     var body: some View {
-        if opened.isEmpty && unopenedPins.isEmpty {
-            EmptyView()
-        } else {
-            ViewThatFits(in: .vertical) {
-                iconList.liquidPanel()
-                ScrollView(.vertical, showsIndicators: false) { iconList }.liquidPanel()
+        switch part {
+        case .current:
+            if let current { railIcon(current, running: true).padding(.vertical, 10).liquidPanel() }
+        case .others:
+            if !otherOpened.isEmpty || !order.unopened.isEmpty {
+                ShrinkScroll { othersList }.liquidPanel()
             }
         }
     }
 
-    /// 第一個是目前在手機畫面最上層的 App；接著像 Mac Dock：使用者釘選的 App 一直在，執行中但沒釘選的接在分隔線後面
-    private var order: (opened: [String], unopened: [String]) { catalog.barOrder(pins: settings.pinned(for: catalog.device)) }
-    private var opened: [String] { order.opened }
-    private var unopenedPins: [String] { order.unopened }
-
-    private var iconList: some View {
+    private var othersList: some View {
         VStack(spacing: 10) {
-            ForEach(opened, id: \.self) { pkg in
-                railIcon(pkg, running: true)
-            }
-            if !opened.isEmpty && !unopenedPins.isEmpty {
+            ForEach(otherOpened, id: \.self) { railIcon($0, running: true) }
+            if !otherOpened.isEmpty && !order.unopened.isEmpty {
                 GlassDivider(opacity: 0.55).padding(.horizontal, 10)
             }
-            ForEach(unopenedPins, id: \.self) { pkg in
-                railIcon(pkg, running: false)
-            }
+            ForEach(order.unopened, id: \.self) { railIcon($0, running: false) }
         }
         .padding(.vertical, 10)
     }
@@ -231,6 +230,28 @@ struct RunningMark: View {
             Circle().fill(color).frame(width: 4, height: 4)
         }
     }
+}
+
+/// 內容多高就最多多高；空間不夠時縮短並可捲動（捲軸隱藏，放不下時上下有小箭頭可以按）
+struct ShrinkScroll<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+    @State private var height: CGFloat = 0
+
+    var body: some View {
+        ArrowScroll(axis: .vertical) {
+            content().background(GeometryReader { g in
+                Color.clear.preference(key: ShrinkScrollHeightKey.self, value: g.size.height)
+            })
+        }
+        .onPreferenceChange(ShrinkScrollHeightKey.self) { height = $0 }
+        .frame(maxHeight: height > 0 ? height : nil)
+        .frame(minHeight: 36)
+    }
+}
+
+private struct ShrinkScrollHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
 struct AppIconView: View {

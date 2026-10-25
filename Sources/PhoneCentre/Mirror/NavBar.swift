@@ -288,10 +288,18 @@ struct SideColumn: View {
                         .liquidPanel()
                         Spacer(minLength: 0)
                     } else {
-                        AppRail(catalog: catalog) { pkg in model.launch(pkg) }
+                        // 現在正在用的 App：獨立一塊盤子，完整顯示、不捲動；其他已開啟的與喜好項目另一塊，空間不夠時先縮小
+                        AppRail(catalog: catalog, part: .current) { pkg in model.launch(pkg) }.layoutPriority(2)
+                        AppRail(catalog: catalog, part: .others) { pkg in model.launch(pkg) }.layoutPriority(0)
                         Spacer(minLength: 0)
                     }
-                    navBar.padding(.vertical, 6).liquidPanel()
+                    // 導覽列：金剛三鍵（返回、主畫面、多工）固定在最下面，其他項目空間不夠時縮小並可捲動
+                    VStack(spacing: 1) {
+                        ShrinkScroll { navItems }
+                        Divider().padding(.horizontal, 10).padding(.vertical, 2).opacity(0.4)
+                        navKeys
+                    }
+                    .padding(.vertical, 6).liquidPanel()
                 }
             }
         }
@@ -309,7 +317,8 @@ struct SideColumn: View {
         }
     }
 
-    private var navBar: some View {
+    /// 可捲動的導覽項目（金剛三鍵以外）
+    private var navItems: some View {
         VStack(spacing: 1) {
             NavButton(help: "畫質設定") { showVideoSettings.toggle() } icon: { sfIcon("environments.circle") }
                 .popover(isPresented: $showVideoSettings) {
@@ -360,7 +369,12 @@ struct SideColumn: View {
                     icon: { sfIcon(model.screenOff ? "iphone.slash" : "iphone") }
                 NavButton(help: "電源") { model.key(KeyMap.power) } icon: { sfIcon("power") }
             }
-            Divider().padding(.horizontal, 10).padding(.vertical, 2).opacity(0.4)
+        }
+    }
+
+    /// 金剛三鍵：固定在最下面
+    private var navKeys: some View {
+        VStack(spacing: 1) {
             NavButton(help: "返回（右鍵／Esc）") { model.navBack() } icon: { SamsungNavIcon.Back() }
             homeButton
             recentsButton

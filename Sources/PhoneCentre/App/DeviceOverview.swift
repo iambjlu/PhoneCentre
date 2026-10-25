@@ -211,7 +211,8 @@ struct PinnedAppsStrip: View {
         if !packages.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 Text(title).font(.headline).foregroundStyle(.secondary)
-                ScrollView(.horizontal, showsIndicators: false) {
+                // 放不下時左右出現箭頭，按下去捲動一頁
+                ArrowScroll(axis: .horizontal) {
                     HStack(spacing: 16) {
                         ForEach(packages, id: \.self) { icon($0) }
                     }
