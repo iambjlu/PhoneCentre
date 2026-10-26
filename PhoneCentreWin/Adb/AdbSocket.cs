@@ -7,7 +7,8 @@ namespace PhoneCentre.Adb;
 /// <summary>adb server 的位置。本機為 127.0.0.1:5037；遠端 PhoneCentre 透過加密通道映射到本機的另一個 port。</summary>
 public readonly record struct AdbEndpoint(string Host = "127.0.0.1", int Port = 5037, Guid? RemoteId = null)
 {
-    public static AdbEndpoint Local => new();
+    // 不能用 new()：record struct 的 new() 會得到全零的 default，不套用主建構函式的預設值
+    public static AdbEndpoint Local { get; } = new("127.0.0.1", 5037, null);
     public bool IsLocal => RemoteId is null;
 }
 
@@ -28,8 +29,12 @@ public sealed class AdbSocket : IDisposable
     public AdbSocket(AdbEndpoint endpoint, double timeout = 5)
     {
         IPAddress[] addrs;
-        try { addrs = Dns.GetHostAddresses(endpoint.Host); }
-        catch { throw AdbException.ConnectFailed($"無法解析 {endpoint.Host}"); }
+        if (IPAddress.TryParse(endpoint.Host, out var literal)) addrs = [literal];
+        else
+        {
+            try { addrs = Dns.GetHostAddresses(endpoint.Host); }
+            catch (Exception e) { throw AdbException.ConnectFailed($"無法解析 {endpoint.Host}（{e.Message}）"); }
+        }
 
         string last = "socket()";
         foreach (var addr in addrs)

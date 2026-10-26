@@ -300,7 +300,7 @@ generic password 的讀寫（service `com.iambjlu.PhoneCentre`）。
 - 開發環境：ARM 版 Windows 機台上用 `dotnet publish -r win-x64 -p:Platform=x64` 交叉編譯，Intel 機台只負責驗證。
 
 ### Adb/
-- `AdbSocket.cs`：對應 `AdbSocket.swift`，`AdbEndpoint`／`AdbException`／阻塞式 socket（`Socket` + 收發逾時），adb server 協定的 `SendRequest`、`HostQuery`、`Open`。
+- `AdbSocket.cs`：對應 `AdbSocket.swift`，`AdbEndpoint`（`Local` 不能用 `new()`，record struct 的 `new()` 是全零 default，不套用預設參數；主機若是 IP 字面值就不走 DNS）／`AdbException`／阻塞式 socket（`Socket` + 收發逾時），adb server 協定的 `SendRequest`、`HostQuery`、`Open`。
 - `AdbClient.cs`：對應 `AdbClient.swift`，短指令走 `exec:`，push／pull／install／pair／mdns 走 adb.exe（遠端端點加 `-H -P`）。
 - `Device.cs`：`Device` 與 `DeviceInfo`（解析 `host:devices-l`、一次抓取的裝置資訊）。
 - `AdbLocator.cs`：找 adb.exe（自訂路徑 → `%LOCALAPPDATA%\PhoneCentre\platform-tools` → ANDROID_HOME → Android SDK → PATH，每個候選先試跑 `adb version`）；找不到時從 Google 下載 Windows 版 platform-tools 並解壓。
@@ -311,7 +311,13 @@ generic password 的讀寫（service `com.iambjlu.PhoneCentre`）。
 - `MirrorConfig.cs`：畫質選項與鏡像參數，預設值同 Mac 版（60 fps、8 Mbps、最大 1920）。
 - `ScrcpySession.cs`：對應 `ScrcpySession.swift`，推送 server、`shell:` 啟動（app_process 參數壓在 240 字元內）、依序連 video → audio → control、讀影像／音訊封包迴圈、剪貼簿與控制事件。解碼與播放不在這裡，透過 `VideoConfig`／`VideoFrame`／`AudioPacket` 事件（背景執行緒）交給外部；`StateChanged`／`FrameSizeChanged`／`DeviceClipboard` 回到建立者的 `SynchronizationContext`（UI 執行緒）。
 
+- `H264Feeder.cs`：把 `VideoConfig`／`VideoFrame` 的 Annex B 封包餵給 `MediaStreamSource`（系統的 H.264 解碼，通常是硬體）。必須從關鍵幀開始，關鍵幀前補上 SPS/PPS；佇列最多 4 個，超過就丟舊的以維持低延遲；`MediaPlayer.RealTimePlayback = true`。目前不用 FFmpeg（共享庫太大、x64／ARM64 要兩套原生 DLL），延遲不夠低再改 Media Foundation 解碼器直接配 D3D 渲染。
+
+### MainWindow（暫時版）
+啟動後連第一台在線裝置並鏡像（`MediaPlayerElement` 顯示，上面蓋一層透明 `Border` 收滑鼠：左鍵＝觸控、右鍵＝返回、中鍵＝主畫面，視窗座標以 Uniform 置中縮放換算成手機座標）。adb server 連不上時先 `start-server` 再試一次。正式 UI 之後取代。
+
 ### Support/ 與 Settings/
+- `Log.cs`：除錯記錄檔 `%LOCALAPPDATA%\PhoneCentre\log.txt`。
 - `Shell.cs`：非同步執行外部程式（stdout／stderr 邊跑邊讀、逾時強制結束）與單引號跳脫。
 - `Assets.cs`：內嵌資源解出。
 - `AppSettings.cs`：目前只有自訂 adb 路徑，之後換成完整設定。
