@@ -6,6 +6,7 @@ macOS（SwiftUI + AppKit）的 Android PhoneCentre。透過 adb 連線手機，�
 - 建置：`scripts/build.sh`（輸出 `build/PhoneCentre.app`；加 `--install` 會複製到 /Applications）
 - 只需要這個 `.app`：scrcpy-server 與手機端輔助程式都打包在裡面；adb 找不到時 App 會協助從 Google 官方下載
 - 最低系統：macOS 15
+- Windows 版是獨立專案：`../PhoneCentreOnPC`（WinUI 3，C#），手機端的 scrcpy-server 與 `phonecentre-helper.jar` 兩邊共用同一份
 
 ## 目錄
 
@@ -290,40 +291,6 @@ generic password 的讀寫（service `com.iambjlu.PhoneCentre`）。
 快取放在 `~/Library/Caches/PhoneCentre/<裝置鍵>/{icons,thumbs,files}`，裝置鍵優先用 ro.serialno（換 port 或改用 USB 都不變）。
 - 清除時機：裝置斷線立即清除該裝置的快取／幾天沒連線才清除（記錄在 `last-seen.json`）／只依容量。
 - 容量上限：依最後存取時間（LRU）刪到上限的 90%；每分鐘檢查一次。
-
-## PhoneCentreWin（Windows 版，WinUI 3）
-
-`PhoneCentreWin/` 是同一個專案的 Windows 版（C# / .NET 10 / Windows App SDK 1.8），不影響 Mac 版的建置。手機端（scrcpy-server、`phonecentre-helper.jar`）原封不動沿用，兩個檔案以 `EmbeddedResource` 內嵌（來源 `ThirdParty/scrcpy/scrcpy-server`、`Resources/phonecentre-helper.jar`），執行時由 `Assets.Extract` 解到 `%LOCALAPPDATA%\PhoneCentre\assets` 再 adb push。
-
-- 打包：unpackaged（`WindowsPackageType=None`）＋ self-contained（`WindowsAppSDKSelfContained`、`SelfContained`）＋ `PublishSingleFile`，產出單一 `PhoneCentre.exe`（約 85 MB，免安裝、雙擊即用）。Windows App SDK 的單檔發行需要 `EnableMsixTooling=true`。目標平台 x64（Intel）與 ARM64。
-- 視窗背景用 `MicaBackdrop`，不做 Liquid Glass。
-- Windows 防火牆第一次執行 adb.exe 會詢問是否允許存取網路；沒回應會被自動建立阻擋規則，之後每次都會再問。
-- 開發環境：ARM 版 Windows 機台上用 `dotnet publish -r win-x64 -p:Platform=x64` 交叉編譯，Intel 機台只負責驗證。
-
-### Adb/
-- `AdbSocket.cs`：對應 `AdbSocket.swift`，`AdbEndpoint`（`Local` 不能用 `new()`，record struct 的 `new()` 是全零 default，不套用預設參數；主機若是 IP 字面值就不走 DNS）／`AdbException`／阻塞式 socket（`Socket` + 收發逾時），adb server 協定的 `SendRequest`、`HostQuery`、`Open`。
-- `AdbClient.cs`：對應 `AdbClient.swift`，短指令走 `exec:`，push／pull／install／pair／mdns 走 adb.exe（遠端端點加 `-H -P`）。
-- `Device.cs`：`Device` 與 `DeviceInfo`（解析 `host:devices-l`、一次抓取的裝置資訊）。
-- `AdbLocator.cs`：找 adb.exe（自訂路徑 → `%LOCALAPPDATA%\PhoneCentre\platform-tools` → ANDROID_HOME → Android SDK → PATH，每個候選先試跑 `adb version`）；找不到時從 Google 下載 Windows 版 platform-tools 並解壓。
-- `HelperTool.cs`：推送並執行手機端輔助程式。
-
-### Mirror/
-- `ControlMessage.cs`：scrcpy 3.3.4 控制協定編碼，與 Swift 版逐位元組比對過（16 種訊息完全一致）。
-- `MirrorConfig.cs`：畫質選項與鏡像參數，預設值同 Mac 版（60 fps、8 Mbps、最大 1920）。
-- `ScrcpySession.cs`：對應 `ScrcpySession.swift`，推送 server、`shell:` 啟動（app_process 參數壓在 240 字元內）、依序連 video → audio → control、讀影像／音訊封包迴圈、剪貼簿與控制事件。解碼與播放不在這裡，透過 `VideoConfig`／`VideoFrame`／`AudioPacket` 事件（背景執行緒）交給外部；`StateChanged`／`FrameSizeChanged`／`DeviceClipboard` 回到建立者的 `SynchronizationContext`（UI 執行緒）。
-
-- `H264Decoder.cs`：用 FFmpeg（libavcodec）軟體解碼 H.264 Annex B 封包，經 swscale 轉成 BGRA，與 scrcpy 自己的做法一致。關鍵幀前補 SPS/PPS，必須從關鍵幀開始；`low_delay`＋slice 執行緒（frame 執行緒會多出幾幀延遲）。雙緩衝，UI 每個畫面刷新用 `TryTakeFrame` 取最新一幀（不排隊，永遠只顯示最新的）。不用系統內建的 Media Foundation 解碼（`MediaStreamSource`）：同一份程式在 ARM64 有輸出，x64（Intel 真機與 ARM 機台模擬）卻吞了封包一幀都不吐，又沒有錯誤訊息可查。
-- `FFmpegNative.cs`：FFmpeg 的 P/Invoke（只用函式，不用 AutoGen；`AVFrame`／`AVPacket` 只讀開頭那段穩定 ABI 的欄位：frame 的 data@0、linesize@64、width@104、height@108、format@116，packet 的 data@24）。DLL 依平台內嵌，第一次使用時解到 `%LOCALAPPDATA%\PhoneCentre\assets`，依 avutil → swscale → avcodec 順序載入。
-- `Native/x64`、`Native/arm64`：精簡版 FFmpeg 7.1.1（只含 h264 解碼器與 parser、swscale，LGPL 共享庫；x64 約 4 MB、ARM64 約 2.8 MB，只依賴系統的 UCRT）。由 `scripts/build-ffmpeg.sh` 在 Mac 上用 llvm-mingw 交叉編譯（x64 需要 nasm 才有 SIMD 最佳化）。`--enable-parser=hevc` 是為了讓 `aom_film_grain.o` 被編進去：FFmpeg 只開 h264 時 `h2645_sei.o` 缺這個符號，連結會失敗。
-
-### MainWindow（暫時版）
-啟動後連第一台在線裝置並鏡像（`Image` ＋ `WriteableBitmap` 顯示，由 `CompositionTarget.Rendering` 取解碼器最新幀；上面蓋一層透明 `Border` 收滑鼠：左鍵＝觸控、右鍵＝返回、中鍵＝主畫面，視窗座標以 Uniform 置中縮放換算成手機座標）。adb server 連不上時先 `start-server` 再試一次。正式 UI 之後取代。
-
-### Support/ 與 Settings/
-- `Log.cs`：除錯記錄檔 `%LOCALAPPDATA%\PhoneCentre\log.txt`。
-- `Shell.cs`：非同步執行外部程式（stdout／stderr 邊跑邊讀、逾時強制結束）與單引號跳脫。
-- `Assets.cs`：內嵌資源解出。
-- `AppSettings.cs`：目前只有自訂 adb 路徑，之後換成完整設定。
 
 ## 已知限制
 
