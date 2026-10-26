@@ -57,31 +57,67 @@ enum LockScreenHelper {
         return CGRect(x: (screen.width - w) / 2, y: screen.height * 0.85 - w, width: w, height: w)
     }
 
-    private static func drawPattern(_ seq: [Int], on c: AdbClient, in b: CGRect) async {
+    /// 圖形密碼每一點的座標（螢幕像素），每兩點之間補幾個點讓軌跡連續
+    private static func patternPath(_ seq: [Int], in b: CGRect) -> [CGPoint] {
         func pt(_ n: Int) -> CGPoint {
             CGPoint(x: b.minX + b.width * (CGFloat((n - 1) % 3) + 0.5) / 3, y: b.minY + b.height * (CGFloat((n - 1) / 3) + 0.5) / 3)
         }
-        guard let first = seq.first else { return }
-        var cmds = ["input motionevent DOWN \(Int(pt(first).x)) \(Int(pt(first).y))"]
+        guard let first = seq.first else { return [] }
+        var pts = [pt(first)]
         for (a, b2) in zip(seq, seq.dropFirst()) {
             let p0 = pt(a), p1 = pt(b2)
-            for i in 1...6 {
-                let t = CGFloat(i) / 6
-                cmds.append("input motionevent MOVE \(Int(p0.x + (p1.x - p0.x) * t)) \(Int(p0.y + (p1.y - p0.y) * t))")
+            for i in 1...5 {
+                let t = CGFloat(i) / 5
+                pts.append(CGPoint(x: p0.x + (p1.x - p0.x) * t, y: p0.y + (p1.y - p0.y) * t))
             }
         }
-        let last = pt(seq.last!)
-        cmds.append("input motionevent UP \(Int(last.x)) \(Int(last.y))")
-        _ = try? await c.shell(cmds.joined(separator: "; "), timeout: 15)
+        pts.append(pts.last!)
+        return pts
+    }
+
+    /// 畫圖形：有主螢幕鏡像連線就直接送觸控（最快）；沒有就由手機端輔助程式在同一個程序內連續注入，
+    /// 不再每一段都執行一次 `input`（每次都要啟動一個程序，約 0.1 秒）。輔助程式失敗才退回 `input motionevent`
+    private static func drawPattern(_ seq: [Int], device: Device, session: ScrcpySession?, screen: CGSize, in b: CGRect) async {
+        let pts = patternPath(seq, in: b)
+        guard !pts.isEmpty else { return }
+        if let s = session, s.frameSize.width > 0 {
+            let size = s.frameSize
+            let kx = size.width / screen.width, ky = size.height / screen.height
+            let w = UInt16(size.width), h = UInt16(size.height)
+            for (i, p) in pts.enumerated() {
+                let action: ControlMessage.MotionAction = i == 0 ? .down : (i == pts.count - 1 ? .up : .move)
+                s.send(.touch(action: action, pointer: ControlMessage.pointerFinger, x: Int32(p.x * kx), y: Int32(p.y * ky),
+                              width: w, height: h, pressure: action == .up ? 0 : 1, actionButton: 0, buttons: 0))
+                try? await Task.sleep(nanoseconds: 8_000_000)
+            }
+            return
+        }
+        let arg = pts.map { "\(Int($0.x)),\(Int($0.y))" }
+        let out = (try? await HelperTool.shared.run(device, ["gesture", "8"] + arg, timeout: 15)) ?? ""
+        if out.contains("ok") { return }
+        var cmds = ["input motionevent DOWN \(arg[0].replacingOccurrences(of: ",", with: " "))"]
+        cmds += arg.dropFirst().dropLast().map { "input motionevent MOVE \($0.replacingOccurrences(of: ",", with: " "))" }
+        cmds.append("input motionevent UP \(arg.last!.replacingOccurrences(of: ",", with: " "))")
+        _ = try? await device.client.shell(cmds.joined(separator: "; "), timeout: 20)
+    }
+
+    /// 找到過的圖形密碼範圍（依裝置），下次不用再跑一次很慢的 uiautomator；解鎖失敗就清掉重找
+    @MainActor private static var patternCache: [String: CGRect] = [:]
+
+    /// 手機面板關閉／開啟（手機本身保持開機）：自動填入密碼期間黑屏，旁人看不到圖形或數字。
+    /// 有主螢幕鏡像連線就用 scrcpy 的面板電源；沒有就請手機端輔助程式處理
+    private static func setPanel(_ on: Bool, device: Device, session: ScrcpySession?) async {
+        if let s = session { s.send(.setDisplayPower(on)); return }
+        _ = try? await HelperTool.shared.run(device, ["power", on ? "2" : "0"], timeout: 10)
     }
 
     /// 喚醒 → 上滑 → 輸入密碼（或畫圖形）→ Enter。
     /// 獨立視窗（虛擬顯示器）的鏡像連線不能操作主螢幕，所以傳 session = nil 改走 adb input。
     @MainActor
-    static func unlock(_ device: Device, session: ScrcpySession?) async -> Bool {
+    static func unlock(_ device: Device, session: ScrcpySession?, keepScreenOff: Bool = false) async -> Bool {
         // 子程序不碰鑰匙圈，也不自己驗證：請主程式（有鑰匙圈權限、做 Touch ID）代辦，只傳「要解鎖哪支手機」，密碼不經過任何通知
         if ChildMode.isChild { return await requestUnlockFromMain(device) }
-        return await unlockHere(device, session: session)
+        return await unlockHere(device, session: session, keepScreenOff: keepScreenOff)
     }
 
     private static let requestName = Notification.Name("com.iambjlu.PhoneCentre.unlockRequest")
@@ -131,12 +167,24 @@ enum LockScreenHelper {
     }
 
     @MainActor
-    private static func unlockHere(_ device: Device, session: ScrcpySession?) async -> Bool {
+    private static func unlockHere(_ device: Device, session: ScrcpySession?, keepScreenOff: Bool = false) async -> Bool {
         guard await authenticate(reason: "填入「\(device.displayName)」的解鎖密碼"),
               let pw = AppSettings.shared.secret(secretKey(device)) else { return false }
+        var session = session, keepScreenOff = keepScreenOff
+        // 獨立視窗或子程序來的請求：這支手機有開主螢幕鏡像的話，借用它的連線（觸控比較快，面板電源也由它管）
+        if session == nil, let m = WindowManager.shared.open.values.map(\.model)
+            .first(where: { !$0.isVirtualDisplay && $0.device.id == device.id && $0.session?.state == .running }) {
+            session = m.session
+            keepScreenOff = m.screenOff
+        }
         let c = device.client
         _ = try? await c.shell("input keyevent 224")
-        try? await Task.sleep(nanoseconds: 400_000_000)
+        // 自動填入期間手機黑屏（只關面板，手機保持開機），解鎖完再打開
+        await setPanel(false, device: device, session: session)
+        defer {
+            if !keepScreenOff { Task { await setPanel(true, device: device, session: session) } }
+        }
+        try? await Task.sleep(nanoseconds: 300_000_000)
         let screen = screenSize(device)
         let size = session?.frameSize ?? .zero
         if let s = session, size.width > 0 {
@@ -159,9 +207,15 @@ enum LockScreenHelper {
             _ = try? await c.shell("wm dismiss-keyguard; input swipe \(x) \(Int(screen.height * 0.85)) \(x) \(Int(screen.height * 0.3)) 150")
         }
         try? await Task.sleep(nanoseconds: 700_000_000)
+        let cacheKey = CacheManager.key(for: device)
         if isPattern(pw) {
-            let bounds = await patternBounds(c, screen: screen)
-            await drawPattern(patternSequence(pw), on: c, in: bounds)
+            let bounds: CGRect
+            if let cached = patternCache[cacheKey] { bounds = cached } else { bounds = await patternBounds(c, screen: screen) }
+            await drawPattern(patternSequence(pw), device: device, session: session, screen: screen, in: bounds)
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            let ok = !(await isLocked(c))
+            if ok { patternCache[cacheKey] = bounds } else { patternCache[cacheKey] = nil }
+            return ok
         } else if let s = session, pw.allSatisfy({ $0.isASCII }) {
             s.send(.text(pw))
             s.send(.keycode(action: .down, keycode: KeyMap.enter, repeat: 0, meta: 0))

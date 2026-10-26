@@ -36,6 +36,12 @@ struct Device: Identifiable, Hashable {
         return parts.joined(separator: " · ")
     }
 
+    /// 廠牌與型號（側邊欄第二行）
+    var modelLine: String {
+        if let m = info?.manufacturer, !m.isEmpty { return m.uppercased() + " " + (info?.model ?? model) }
+        return model.replacingOccurrences(of: "_", with: " ")
+    }
+
     var stateDescription: String {
         switch state {
         case "device": return "已連線"

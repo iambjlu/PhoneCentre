@@ -77,7 +77,8 @@ struct MirrorContentView: View {
     @ViewBuilder
     private var overlays: some View {
         VStack {
-            if model.showUnlockBanner && !model.isVirtualDisplay {
+            // 主螢幕與獨立視窗都用頂端的小橫幅（可以關掉）：手機鎖著時第二螢幕常常還看得到 App，不要用大卡片擋住畫面
+            if model.showUnlockBanner {
                 HStack(spacing: 10) {
                     Image(systemName: "lock.fill")
                     Text("手機已鎖定")
@@ -87,7 +88,7 @@ struct MirrorContentView: View {
                 }
                 .padding(10)
                 .glassCard(cornerRadius: 12)
-                .padding(.top, 49)   // 往下一點，不要擋住手機的狀態列
+                .padding(.top, model.isVirtualDisplay ? 12 : 49)   // 主螢幕往下一點，不要擋住手機的狀態列
             }
             Spacer()
             if !model.markedText.isEmpty {
@@ -99,16 +100,6 @@ struct MirrorContentView: View {
             }
         }
         .allowsHitTesting(model.showUnlockBanner)
-        // 手機鎖定時，虛擬顯示器上的 App 會黑屏：明確提示
-        if model.locked && model.isVirtualDisplay && model.statusText == nil {
-            VStack(spacing: 12) {
-                Image(systemName: "lock.fill").font(.largeTitle)
-                Text("手機已鎖定，解鎖後才會顯示 App 畫面").font(.headline).multilineTextAlignment(.center)
-                unlockButton
-            }
-            .padding(24)
-            .glassCard(cornerRadius: 18)
-        }
         if model.appClosed, model.statusText == nil, let pkg = model.appPackage {
             // 整個畫面區毛玻璃：最後一幀霧化當底，上面再蓋一層毛玻璃（App 不支援橫向時兩側的黑邊也一起霧化）
             if let snap = model.closedSnapshot {
@@ -424,7 +415,7 @@ struct LockPasswordSheet: View {
                 .fixedSize(horizontal: false, vertical: true)
             Picker("", selection: $usePattern) {
                 Text("PIN／密碼").tag(false)
-                Text("圖形").tag(true)
+                Text("圖形 (Beta)").tag(true)
             }
             .pickerStyle(.segmented).labelsHidden()
             if usePattern {
@@ -432,6 +423,9 @@ struct LockPasswordSheet: View {
                     Spacer()
                     VStack(spacing: 8) {
                         PatternPad(sequence: $pattern)
+                        Text("圖形解鎖是 Beta 功能：圖形位置由畫面結構推算，部分機型（例如沒有螢幕下指紋的 Galaxy S8 等舊機，圖形在比較下面）可能畫不到，解鎖會失敗。")
+                            .font(.caption).foregroundStyle(.orange)
+                            .fixedSize(horizontal: false, vertical: true).frame(maxWidth: 300)
                         HStack {
                             Text(pattern.isEmpty ? "在上面畫出圖形（至少 4 個點）" : pattern.map(String.init).joined(separator: " → "))
                                 .font(.caption).foregroundStyle(.secondary)

@@ -52,25 +52,12 @@ struct MainView: View {
         List(selection: $selection) {
             Section("裝置") {
                 ForEach(dm.devices.filter { !$0.isRemote }) { d in deviceRow(d) }
-                ForEach(offlineSaved) { ep in
-                    HStack {
-                        Image(systemName: "wifi.slash").foregroundStyle(.secondary).frame(width: 22)
-                        VStack(alignment: .leading) {
-                            Text(ep.name ?? ep.address)
-                            Text(dm.reconnecting.contains(ep.address) ? "重新連線中…" : "離線 · \(ep.address)")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                    .contextMenu {
-                        Button("立即重連") { Task { _ = await dm.connect(ep.address) } }
-                        Button("忘記這台裝置", role: .destructive) { dm.forget(ep) }
-                    }
-                }
+                ForEach(offlineSaved) { ep in SavedEndpointRow(ep: ep) }
                 if dm.devices.isEmpty && offlineSaved.isEmpty {
                     Text("插上已開啟 USB 偵錯的手機，或按 + 加入無線裝置").font(.caption).foregroundStyle(.secondary)
                 }
             }
-            ForEach(settings.remoteHosts) { h in
+            ForEach(settings.remoteEnabled ? settings.remoteHosts : []) { h in
                 let ds = dm.devices.filter { $0.endpoint.remoteID == h.id }
                 Section {
                     ForEach(ds) { d in deviceRow(d) }
@@ -83,7 +70,7 @@ struct MainView: View {
                 } header: {
                     HStack(spacing: 6) {
                         Circle().fill(ds.isEmpty ? Color.orange : .green).frame(width: 7, height: 7)
-                        Text("\(h.name)（遠端）")
+                        Text("\(h.name)（遠端 Beta）")
                         Spacer()
                         Menu {
                             Button("重新連線") { remote.reconnect(h) }
@@ -108,7 +95,7 @@ struct MainView: View {
         .toolbar {
             ToolbarItem {
                 Button { showAdd = true } label: { Label("加入裝置", systemImage: "plus") }
-                    .help("加入無線裝置或遠端 PhoneCentre")
+                    .help(settings.remoteEnabled ? "加入無線裝置或遠端 PhoneCentre (Beta)" : "加入無線裝置")
             }
         }
     }
@@ -195,8 +182,46 @@ struct MainView: View {
     }
 }
 
+/// 清單上記住、但目前沒連上的無線裝置：右邊一鍵連線；右鍵可連線、切換自動重新連線、從清單移除
+struct SavedEndpointRow: View {
+    let ep: SavedEndpoint
+    @ObservedObject private var dm = DeviceManager.shared
+
+    private var state: String {
+        if dm.reconnecting.contains(ep.address) { return "連線中…" }
+        if dm.paused.contains(ep.address) { return "已中斷連線" }
+        return ep.auto ? "離線" : "離線（不自動連線）"
+    }
+
+    var body: some View {
+        HStack {
+            Image(systemName: "wifi.slash").foregroundStyle(.secondary).frame(width: 22)
+            VStack(alignment: .leading) {
+                Text(ep.name ?? ep.address).lineLimit(1)
+                Text(state).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(ep.address).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer()
+            if dm.reconnecting.contains(ep.address) {
+                ProgressView().controlSize(.small)
+            } else {
+                Button { Task { await dm.reconnectSaved(ep) } } label: { Image(systemName: "arrow.clockwise.circle") }
+                    .buttonStyle(.plain).foregroundStyle(.secondary).help("連線")
+            }
+        }
+        .contextMenu {
+            Button("連線") { Task { await dm.reconnectSaved(ep) } }
+            Toggle("自動重新連線", isOn: Binding(get: { ep.auto }, set: { dm.setAutoReconnect(ep.address, $0) }))
+            Divider()
+            Button("從清單移除", role: .destructive) { dm.forget(ep) }
+        }
+    }
+}
+
 struct DeviceRow: View {
     let device: Device
+    @ObservedObject private var statusStore = DeviceStatusStore.shared
+    @ObservedObject private var settings = AppSettings.shared
     /// 選中的列底色是強調色，圖示與狀態燈要換色才不會和底色糊在一起。
     /// 由 MainView 直接告知是否選中（新版側邊欄的選取底色不一定會改變 backgroundProminence）
     var isSelected = false
@@ -207,20 +232,38 @@ struct DeviceRow: View {
         HStack {
             Image(systemName: device.symbolName).frame(width: 22)
                 .foregroundStyle(selected ? Color.white : device.isOnline ? Color.accentColor : .secondary)
+            // 第一行名稱、第二行連線方式（無線位址或廠牌型號）、第三行 Android 版本
             VStack(alignment: .leading) {
-                Text(device.displayName)
-                Text(device.isOnline ? (device.isWireless ? device.serial : device.subtitle) : device.stateDescription)
+                Text(device.displayName).lineLimit(1)
+                Text(device.isOnline ? (device.isWireless ? device.serial : device.modelLine) : device.stateDescription)
                     .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                if device.isOnline, let v = device.info?.androidVersion {
+                    Text("Android \(v)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
             }
-            Spacer()
-            Circle().fill(device.isOnline ? .green : .orange).frame(width: 7, height: 7)
+            Spacer(minLength: 4)
+            // 跟鏡像視窗同款的狀態圖（電池環、Wi-Fi／4G、訊號點）；讀到之前轉圈圈
+            if device.isOnline {
+                StatusIndicator(status: statusStore.status(for: device) ?? DeviceStatus(), size: 30,
+                                loaded: statusStore.status(for: device) != nil, compact: true)
+                    .environment(\.colorScheme, .dark)
+            } else {
+                Circle().fill(.orange).frame(width: 7, height: 7)
+            }
         }
         .contextMenu {
             if device.isOnline {
                 Button("鏡像畫面") { WindowManager.shared.openMirror(device) }
             }
             if device.isWireless && !device.isRemote {
-                Button("中斷連線", role: .destructive) { Task { await DeviceManager.shared.disconnect(device) } }
+                let saved = DeviceManager.shared.saved(for: device)
+                Divider()
+                if let saved {
+                    Toggle("自動重新連線", isOn: Binding(get: { saved.auto },
+                                                     set: { DeviceManager.shared.setAutoReconnect(saved.address, $0) }))
+                }
+                Button("中斷連線（保留在清單）") { Task { await DeviceManager.shared.disconnectKeeping(device) } }
+                Button("中斷連線並從清單移除", role: .destructive) { Task { await DeviceManager.shared.disconnect(device) } }
             }
         }
     }

@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 /// 手機狀態：電池、網路（Wi-Fi 或行動網路世代）、主要 SIM 卡訊號格數
 struct SimInfo: Equatable {
@@ -216,6 +217,43 @@ struct DeviceStatus: Equatable {
         case "EDGE", "GPRS", "GSM": return "2G"
         case "": return "4G"
         default: return rat
+        }
+    }
+}
+
+/// 主視窗用的手機狀態（側邊欄每台裝置的狀態圖、總覽）：每 10 秒更新所有在線裝置
+@MainActor
+final class DeviceStatusStore: ObservableObject {
+    static let shared = DeviceStatusStore()
+    @Published private(set) var statuses: [String: DeviceStatus] = [:]
+    private var inFlight: Set<String> = []
+    private var timer: Timer?
+
+    func start() {
+        guard timer == nil else { return }
+        timer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { _ in
+            Task { @MainActor in DeviceStatusStore.shared.refreshAll() }
+        }
+        refreshAll()
+    }
+
+    func status(for d: Device) -> DeviceStatus? { statuses[d.id] }
+
+    func refreshAll() {
+        let online = DeviceManager.shared.onlineDevices
+        let ids = Set(online.map(\.id))
+        for k in statuses.keys where !ids.contains(k) { statuses[k] = nil }
+        // 裝置資訊讀到之前（手機剛開機、服務還沒起來）先不讀狀態
+        for d in online where d.info != nil { refresh(d) }
+    }
+
+    func refresh(_ d: Device) {
+        guard !inFlight.contains(d.id) else { return }
+        inFlight.insert(d.id)
+        Task {
+            let s = await DeviceStatus.fetch(d.client)
+            inFlight.remove(d.id)
+            if let s, statuses[d.id] != s { statuses[d.id] = s }
         }
     }
 }

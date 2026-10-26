@@ -18,6 +18,8 @@ final class DeviceManager: ObservableObject {
     @Published private(set) var lastEvent: String = ""
     /// 正在重連的無線位址
     @Published private(set) var reconnecting: Set<String> = []
+    /// 使用者手動中斷連線、但保留在清單上的無線位址：不自動重連，直到使用者自己按「連線」（只在這次執行期間有效）
+    @Published private(set) var paused: Set<String> = []
 
     private var infoCache: [String: DeviceInfo] = [:]
     private var infoLoading: Set<String> = []
@@ -120,16 +122,47 @@ final class DeviceManager: ObservableObject {
             if let info { list[i].serialNo = info.serialNo; list[i].name = info.deviceName.isEmpty ? info.model : info.deviceName }
         } else {
             // 同一台手機換了 port，就更新舊紀錄
-            if let info, let i = list.firstIndex(where: { $0.serialNo == info.serialNo }) { list.remove(at: i) }
+            var auto: Bool?
+            if let info, let i = list.firstIndex(where: { $0.serialNo == info.serialNo }) { auto = list[i].autoReconnect; list.remove(at: i) }
             list.append(SavedEndpoint(address: address, serialNo: info?.serialNo,
-                                      name: info.map { $0.deviceName.isEmpty ? $0.model : $0.deviceName }))
+                                      name: info.map { $0.deviceName.isEmpty ? $0.model : $0.deviceName }, autoReconnect: auto))
         }
         if list != settings.savedEndpoints { settings.savedEndpoints = list }
     }
 
     func forget(_ ep: SavedEndpoint) {
         settings.savedEndpoints.removeAll { $0.address == ep.address }
+        paused.remove(ep.address)
         Task { await AdbClient.disconnect(ep.address) }
+    }
+
+    /// 清單上記住的無線裝置（依位址或 ro.serialno 找）
+    func saved(for device: Device) -> SavedEndpoint? {
+        settings.savedEndpoints.first { $0.address == device.serial }
+            ?? device.info.flatMap { info in settings.savedEndpoints.first { $0.serialNo == info.serialNo } }
+    }
+
+    /// 設定這台無線裝置斷線時要不要自動重新連線
+    func setAutoReconnect(_ address: String, _ on: Bool) {
+        guard let i = settings.savedEndpoints.firstIndex(where: { $0.address == address }) else { return }
+        settings.savedEndpoints[i].autoReconnect = on
+    }
+
+    /// 中斷連線但保留在清單上：這次執行期間不會自動重連，之後可以從清單一鍵連回去
+    func disconnectKeeping(_ device: Device) async {
+        if device.isWireless, !device.isRemote, settings.rememberWireless, saved(for: device) == nil { remember(device.serial, info: device.info) }
+        paused.insert(device.serial)
+        backoff[device.serial] = nil
+        await AdbClient.disconnect(device.serial, endpoint: device.endpoint)
+        await refresh()
+    }
+
+    /// 從清單手動連回去（清掉「已中斷」狀態）
+    func reconnectSaved(_ ep: SavedEndpoint) async {
+        paused.remove(ep.address)
+        backoff[ep.address] = nil
+        await reconnect(ep)
+        await refresh()
     }
 
     private func maintainWireless(online: [Device]) async {
@@ -138,6 +171,8 @@ final class DeviceManager: ObservableObject {
         let onlineSerialNos = Set(online.compactMap { $0.isOnline ? $0.info?.serialNo : nil })
         for ep in settings.savedEndpoints {
             if localOnline.contains(ep.address) { backoff[ep.address] = nil; continue }
+            // 使用者關掉自動重連，或手動中斷連線（保留在清單）的，不自動連
+            if !ep.auto || paused.contains(ep.address) { continue }
             // 同一台手機已經用別的方式（USB、新 port）連上了，就不重連
             if let sn = ep.serialNo, onlineSerialNos.contains(sn) { continue }
             if let b = backoff[ep.address], b.next > Date() { continue }
@@ -170,7 +205,7 @@ final class DeviceManager: ObservableObject {
                     log("\(ep.name ?? sn) 的 port 已變更為 \(svc.address)，已重新連線")
                     var list = settings.savedEndpoints
                     list.removeAll { $0.address == ep.address }
-                    list.append(SavedEndpoint(address: svc.address, serialNo: sn, name: ep.name))
+                    list.append(SavedEndpoint(address: svc.address, serialNo: sn, name: ep.name, autoReconnect: ep.autoReconnect))
                     settings.savedEndpoints = list
                     return
                 }
@@ -183,6 +218,7 @@ final class DeviceManager: ObservableObject {
     func connect(_ address: String) async -> (Bool, String) {
         var addr = address.trimmingCharacters(in: .whitespaces)
         if !addr.contains(":") { addr += ":5555" }
+        paused.remove(addr)
         let r = await AdbClient.connect(addr)
         if r.ok, settings.rememberWireless { remember(addr, info: nil) }
         await refresh()
@@ -204,8 +240,10 @@ final class DeviceManager: ObservableObject {
         return result.0 ? (true, "已切換為無線：\(ip):5555，現在可以拔掉 USB") : result
     }
 
+    /// 中斷連線並從清單移除
     func disconnect(_ device: Device) async {
         settings.savedEndpoints.removeAll { $0.address == device.serial }
+        paused.remove(device.serial)
         await AdbClient.disconnect(device.serial, endpoint: device.endpoint)
         await refresh()
     }

@@ -502,7 +502,10 @@ final class MirrorModel: ObservableObject {
                 Task { @MainActor in
                     guard let self else { return }
                     let l = await LockScreenHelper.isLocked(self.device.client)
-                    if l != self.locked { self.locked = l }
+                    if l != self.locked {
+                        self.locked = l
+                        if !l { self.unlockPromptDismissed = false }
+                    }
                 }
             })
         }
@@ -589,7 +592,7 @@ final class MirrorModel: ObservableObject {
     func unlock() {
         Task {
             toast = "正在解鎖…"
-            let ok = await LockScreenHelper.unlock(device, session: isVirtualDisplay ? nil : session)
+            let ok = await LockScreenHelper.unlock(device, session: isVirtualDisplay ? nil : session, keepScreenOff: screenOff)
             toast = ok ? nil : "解鎖未成功，請確認儲存的密碼"
             if ok { locked = false }
             clearToastLater()

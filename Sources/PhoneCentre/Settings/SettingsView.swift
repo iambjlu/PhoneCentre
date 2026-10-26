@@ -6,7 +6,7 @@ struct SettingsView: View {
             GeneralSettings().tabItem { Label("一般", systemImage: "gearshape") }
             ConnectionSettings().tabItem { Label("連線", systemImage: "cable.connector") }
             MirrorSettings().tabItem { Label("鏡像", systemImage: "rectangle.on.rectangle") }
-            ShareSettings().tabItem { Label("分享", systemImage: "network") }
+            ShareSettings().tabItem { Label("遠端 (Beta)", systemImage: "network") }
             StorageSettings().tabItem { Label("儲存", systemImage: "internaldrive") }
         }
         .frame(minWidth: 600, minHeight: 520)
@@ -135,6 +135,11 @@ private struct ShareSettings: View {
 
     var body: some View {
         Form {
+            Section {
+                Toggle("啟用遠端 PhoneCentre 功能 (Beta)", isOn: $s.data.remoteEnabled)
+                Text("包含「連到其他 PhoneCentre」與「讓其他 PhoneCentre 連入」。關閉後不會連任何遠端主機、不開任何對外的 port，也不在區域網路上公告；側邊欄與「加入裝置」裡的遠端項目都會隱藏。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Section("讓其他 PhoneCentre 連入") {
                 Toggle("開啟分享", isOn: $s.data.shareEnabled)
                 TextField("Port", text: $port)
@@ -150,6 +155,7 @@ private struct ShareSettings: View {
                     if server.activeConnections > 0 { Text("· \(server.activeConnections) 條連線").foregroundStyle(.secondary) }
                 }
             }
+            .disabled(!s.remoteEnabled)
             Section {
                 Text("連線使用 TLS 加密（PSK，金鑰由密碼經 PBKDF2 推導），密碼錯誤無法完成握手；同一來源連續失敗會暫時封鎖。對方可以操作這台 Mac 連接的所有手機，請只把密碼給信任的人。若要從外網連入，需要在路由器設定 port 轉送。")
                     .font(.caption).foregroundStyle(.secondary)
@@ -157,6 +163,7 @@ private struct ShareSettings: View {
         }
         .formStyle(.grouped)
         .onChange(of: s.shareEnabled) { _, _ in server.apply() }
+        .onChange(of: s.remoteEnabled) { _, _ in server.apply(); RemoteManager.shared.apply() }
     }
 }
 

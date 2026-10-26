@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         PhoneDataStore.shared.start()
         LockScreenHelper.startServingUnlockRequests()
         DeviceManager.shared.start()
+        DeviceStatusStore.shared.start()
         RemoteManager.shared.start()
         ShareServer.shared.apply()
         menuBar = MenuBarController(delegate: self)

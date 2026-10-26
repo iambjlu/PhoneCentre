@@ -15,6 +15,7 @@ final class ShareServer: ObservableObject {
     func apply() {
         let s = AppSettings.shared
         stop()
+        guard s.remoteEnabled else { status = "遠端功能已關閉"; return }
         guard s.shareEnabled else { status = "未啟動"; return }
         let pw = s.sharePassword
         guard pw.count >= 6 else { status = "請設定至少 6 個字元的密碼"; return }
@@ -124,7 +125,8 @@ final class RemoteManager: ObservableObject {
 
     /// 設定變動後同步通道
     func apply() {
-        let hosts = AppSettings.shared.remoteHosts
+        // 遠端功能關閉時等於沒有任何主機：現有通道全部關掉
+        let hosts = AppSettings.shared.remoteEnabled ? AppSettings.shared.remoteHosts : []
         for (id, t) in tunnels where !hosts.contains(where: { $0.id == id && $0.autoConnect && $0 == t.host }) {
             t.listener.cancel()
             tunnels[id] = nil
@@ -136,6 +138,7 @@ final class RemoteManager: ObservableObject {
     }
 
     func reconnect(_ h: RemoteHost) {
+        guard AppSettings.shared.remoteEnabled else { return }
         tunnels[h.id]?.listener.cancel()
         tunnels[h.id] = nil
         open(h)

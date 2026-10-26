@@ -109,7 +109,7 @@ struct StatusIndicator: View {
             }
             if status.batteryLevel >= 0 {
                 Text("\(status.batteryLevel)")
-                    .font(.system(size: 12, weight: .bold, design: .rounded)).monospacedDigit()
+                    .font(.system(size: min(12, size * 0.3), weight: .bold, design: .rounded)).monospacedDigit()
                     .foregroundStyle(status.charging ? Color.green : Color.white)
                     .offset(y: -(size / 2 - 2) + 0.8)   // 壓在環的正中間（數字視覺中心略高於文字框中心）
             }

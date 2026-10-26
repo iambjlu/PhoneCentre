@@ -3,19 +3,23 @@ import SwiftUI
 
 struct AddDeviceSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var settings = AppSettings.shared
     @State private var mode = 0
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("", selection: $mode) {
-                Text("無線 ADB").tag(0)
-                Text("遠端 PhoneCentre").tag(1)
+            // 遠端功能（Beta）關閉時只剩無線 ADB
+            if settings.remoteEnabled {
+                Picker("", selection: $mode) {
+                    Text("無線 ADB").tag(0)
+                    Text("遠端 PhoneCentre (Beta)").tag(1)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .padding()
+                Divider()
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .padding()
-            Divider()
-            if mode == 0 { WirelessAddView() } else { RemoteAddView() }
+            if mode == 0 || !settings.remoteEnabled { WirelessAddView() } else { RemoteAddView() }
             Divider()
             HStack { Spacer(); Button("完成") { dismiss() }.keyboardShortcut(.cancelAction) }.padding()
         }

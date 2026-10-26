@@ -43,6 +43,8 @@ import java.util.Set;
  *   removetasks <id...>  從最近使用移除 task（跟手動滑掉一樣；常駐程序的 App 用 force-stop 清不掉）
  *   tobg <prev> <id...>  把 root task 搬到主螢幕，同一個程序內立刻把 prev（主螢幕原本最上層的 task，-1 = 不處理）
  *                        拉回最上層：兩個動作間隔不到 1ms，App 不會在主螢幕上閃一下
+ *   power <0|2>          主螢幕面板關閉（0）／開啟（2），手機本身保持開機（跟 scrcpy 的關閉螢幕相同做法）
+ *   gesture <ms> <x,y...> 在主螢幕注入一筆觸控：第一點按下、依序移動、最後一點放開；每點間隔 ms 毫秒
  */
 public final class Main {
 
@@ -79,6 +81,13 @@ public final class Main {
                     break;
                 case "tobg":
                     toBackground(args);
+                    break;
+                case "power":
+                    out.println(setPanelPower(Integer.parseInt(args[1])) ? "ok" : "fail");
+                    break;
+                case "gesture":
+                    gesture(args);
+                    out.println("ok");
                     break;
                 default:
                     System.err.println("unknown command " + args[0]);
@@ -347,5 +356,85 @@ public final class Main {
             else if (p.length == 3) front.invoke(svc, prev, 0, null);
         }
         out.println("ok");
+    }
+
+    // ---- 面板電源（同 scrcpy：SurfaceControl.setDisplayPowerMode；Android 14+ 的實體顯示器 token 由 DisplayControl 取得）----
+
+    private static boolean setPanelPower(int mode) {
+        try {
+            Class<?> sc = Class.forName("android.view.SurfaceControl");
+            Method set = sc.getMethod("setDisplayPowerMode", android.os.IBinder.class, int.class);
+            boolean any = false;
+            for (android.os.IBinder token : physicalDisplayTokens(sc)) {
+                set.invoke(null, token, mode);
+                any = true;
+            }
+            return any;
+        } catch (Throwable t) {
+            t.printStackTrace();
+            return false;
+        }
+    }
+
+    private static List<android.os.IBinder> physicalDisplayTokens(Class<?> sc) throws Exception {
+        List<android.os.IBinder> list = new java.util.ArrayList<>();
+        if (Build.VERSION.SDK_INT >= 34) {
+            Class<?> f = Class.forName("com.android.internal.os.ClassLoaderFactory");
+            Method create = f.getDeclaredMethod("createClassLoader", String.class, String.class, String.class,
+                    ClassLoader.class, int.class, boolean.class, String.class);
+            ClassLoader cl = (ClassLoader) create.invoke(null, "/system/framework/services.jar", null, null,
+                    ClassLoader.getSystemClassLoader(), 0, true, null);
+            Class<?> dc = cl.loadClass("com.android.server.display.DisplayControl");
+            Method load = Runtime.class.getDeclaredMethod("loadLibrary0", Class.class, String.class);
+            load.setAccessible(true);
+            load.invoke(Runtime.getRuntime(), dc, "android_servers");
+            long[] ids = (long[]) dc.getMethod("getPhysicalDisplayIds").invoke(null);
+            Method tok = dc.getMethod("getPhysicalDisplayToken", long.class);
+            for (long id : ids) list.add((android.os.IBinder) tok.invoke(null, id));
+        } else if (Build.VERSION.SDK_INT >= 29) {
+            long[] ids = (long[]) sc.getMethod("getPhysicalDisplayIds").invoke(null);
+            Method tok = sc.getMethod("getPhysicalDisplayToken", long.class);
+            for (long id : ids) list.add((android.os.IBinder) tok.invoke(null, id));
+        } else {
+            list.add((android.os.IBinder) sc.getMethod("getBuiltInDisplay", int.class).invoke(null, 0));
+        }
+        return list;
+    }
+
+    // ---- 觸控注入（同一個程序內連續送出，比每一段都執行一次 input 指令快很多）----
+
+    private static void gesture(String[] args) throws Exception {
+        int delay = Integer.parseInt(args[1]);
+        int n = args.length - 2;
+        if (n < 1) return;
+        float[][] pts = new float[n][2];
+        for (int i = 0; i < n; i++) {
+            String[] xy = args[i + 2].split(",");
+            pts[i][0] = Float.parseFloat(xy[0]);
+            pts[i][1] = Float.parseFloat(xy[1]);
+        }
+        Object im;
+        Method inject;
+        try {
+            Class<?> g = Class.forName("android.hardware.input.InputManagerGlobal");
+            im = g.getMethod("getInstance").invoke(null);
+            inject = g.getMethod("injectInputEvent", android.view.InputEvent.class, int.class);
+        } catch (ClassNotFoundException e) {
+            Class<?> g = android.hardware.input.InputManager.class;
+            im = g.getMethod("getInstance").invoke(null);
+            inject = g.getMethod("injectInputEvent", android.view.InputEvent.class, int.class);
+        }
+        long down = android.os.SystemClock.uptimeMillis();
+        for (int i = 0; i < n; i++) {
+            int action = i == 0 ? android.view.MotionEvent.ACTION_DOWN
+                    : (i == n - 1 ? android.view.MotionEvent.ACTION_UP : android.view.MotionEvent.ACTION_MOVE);
+            long now = android.os.SystemClock.uptimeMillis();
+            android.view.MotionEvent ev = android.view.MotionEvent.obtain(down, now, action, pts[i][0], pts[i][1], 0);
+            ev.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
+            // 2 = INJECT_INPUT_EVENT_MODE_WAIT_FOR_FINISH：等系統處理完再送下一點，軌跡才不會被合併掉
+            inject.invoke(im, ev, 2);
+            ev.recycle();
+            if (delay > 0 && i < n - 1) Thread.sleep(delay);
+        }
     }
 }

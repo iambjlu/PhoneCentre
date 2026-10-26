@@ -25,9 +25,15 @@ struct DeviceOverview: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(device.displayName).font(.title.bold())
                         Text(device.subtitle).foregroundStyle(.secondary)
-                        Text(device.isRemote ? "透過遠端 PhoneCentre" : (device.isWireless ? "無線 · \(device.serial)" : "USB · \(device.serial)"))
+                        Text(device.isRemote ? "透過遠端 PhoneCentre (Beta)" : (device.isWireless ? "無線 · \(device.serial)" : "USB · \(device.serial)"))
                             .font(.caption).foregroundStyle(.secondary)
                     }
+                    Spacer()
+                    // 跟鏡像視窗同款的狀態圖；點一下開鏡像畫面
+                    StatusIndicator(status: status, size: 52, loaded: statusLoaded, compact: true)
+                        .environment(\.colorScheme, .dark)
+                        .contentShape(Rectangle())
+                        .onTapGesture { WindowManager.shared.openMirror(device) }
                 }
 
                 PinnedAppsStrip(device: device, catalog: DeviceManager.shared.catalog(for: device))
@@ -37,6 +43,7 @@ struct DeviceOverview: View {
                     BigButton("桌面模式(Beta)", "desktopcomputer") { WindowManager.shared.openDesktop(device) }
                     BigButton("安裝 APK…", "shippingbox") { pickAPK() }
                     BigButton("解鎖密碼…", "touchid") { showPassword = true }
+                    BigButton("重新啟動…", "arrow.clockwise.circle") { confirmReboot() }
                 }
 
                 GroupBox("裝置資訊") {
@@ -90,6 +97,8 @@ struct DeviceOverview: View {
             .frame(maxWidth: .infinity)   // 捲動內容撐滿寬度，工具列後面的邊緣效果才不會只有 760 寬一塊
         }
         .task(id: device.id) {
+            // 側邊欄已經讀過狀態就先顯示，不用再轉圈圈
+            if let s = DeviceStatusStore.shared.status(for: device) { status = s; statusLoaded = true }
             // 載入後每 10 秒更新一次（電池、訊號會變；手機剛開機、服務還沒起來時第一次可能失敗）
             while !Task.isCancelled {
                 await loadStatus()
@@ -173,6 +182,20 @@ struct DeviceOverview: View {
                 storageLoaded = true
             }
         }
+    }
+
+    /// 重新啟動手機：先確認，再用 `svc power reboot`（shell 有權限；不行再試 reboot）
+    private func confirmReboot() {
+        let alert = NSAlert()
+        alert.messageText = "要重新啟動「\(device.displayName)」嗎？"
+        alert.informativeText = "手機會立刻重新開機，開啟中的鏡像與獨立視窗都會中斷。重新開機後如果需要輸入 SIM 卡 PIN 或解鎖，請在手機上操作；無線連線要等手機重新連上 Wi-Fi 才會恢復。"
+        alert.addButton(withTitle: "重新啟動")
+        alert.addButton(withTitle: "取消")
+        alert.buttons[0].hasDestructiveAction = true
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let c = device.client
+        message = "正在重新啟動…"
+        Task { _ = try? await c.shell("svc power reboot 2>/dev/null || reboot", timeout: 8) }
     }
 
     private func pickAPK() {

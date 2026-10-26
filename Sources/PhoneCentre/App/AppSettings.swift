@@ -63,6 +63,8 @@ struct SettingsData: Codable, Equatable {
     var turnScreenOffWhileMirroring = false
     var desktopModeForAppWindows = false
     var showMenuBarIcon = true
+    /// 遠端 PhoneCentre（Beta）總開關：關閉時不連任何遠端主機、也不開分享，介面上相關項目全部隱藏
+    var remoteEnabled = true
     var shareEnabled = false
     var sharePort = 47_500
     var savedEndpoints: [SavedEndpoint] = []
@@ -253,7 +255,10 @@ struct SavedEndpoint: Codable, Hashable, Identifiable {
     var address: String          // host:port
     var serialNo: String?        // ro.serialno，用來在 port 變動時透過 mDNS 找回
     var name: String?
+    /// 斷線時自動重新連線（nil＝舊設定檔，視為開啟）
+    var autoReconnect: Bool?
     var id: String { address }
+    var auto: Bool { autoReconnect ?? true }
 }
 
 /// 遠端 PhoneCentre 主機
