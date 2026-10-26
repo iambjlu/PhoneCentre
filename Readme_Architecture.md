@@ -10,6 +10,8 @@ macOS（SwiftUI + AppKit）的 Android PhoneCentre。透過 adb 連線手機，�
 ## 目錄
 
 ```
+README.md                      專案特色、截圖、第三方授權條款、隱私說明與免責聲明
+docs/screenshots/              README 用的螢幕截圖
 Package.swift                  SwiftPM 專案（單一 executable target，Swift 5 語言模式）
 scripts/build.sh               建置腳本：下載並驗證 scrcpy-server、建置 Android 輔助程式、編譯、組裝 .app、簽章
 scripts/make_icon.swift        產生 Resources/AppIcon.icns
@@ -39,6 +41,10 @@ Sources/PhoneCentre/           Swift 原始碼（下面各章節；PhoneData 為
 - `thumbs <px> <路徑...>`：在手機端產生相片／影片縮圖，每行「路徑 \t base64 JPEG」，只傳小圖不傳原檔。
   - 圖片用 `ThumbnailUtils`（API 29+），影片用 `ThumbnailUtils`／`MediaMetadataRetriever`，再不行用 `BitmapFactory` 取樣。
   - 方向修正：HEIC 的旋轉寫在 HEIF 容器（irot），用 `MediaMetadataRetriever.METADATA_KEY_IMAGE_ROTATION` 讀；其他用 EXIF。比對原圖與縮圖長寬，避免已轉過的再轉一次。
+- `removetasks <id...>`：以 `IActivityTaskManager.removeTask`（Android 9 以前在 `IActivityManager`）從最近使用移除 task，跟手動滑掉一樣；每行「id \t 1/0」。
+- `tobg <prev> <id...>`：`moveRootTaskToDisplay`（舊版 `moveStackToDisplay`）把虛擬顯示器上的 root task 搬到主螢幕，同一個程序內立刻 `moveTaskToFront(prev)` 把主螢幕原本最上層的 task 拉回來（Android 10+ 以 `com.android.shell` 為呼叫者套件；prev = -1 不處理）。兩個動作間隔不到 1ms，App 直接排在原本畫面的後面，不會在主螢幕上出現。
+- `power <0|2>`：主螢幕面板關閉／開啟（`SurfaceControl.setDisplayPowerMode`；實體顯示器 token 在 Android 10–13 取自 `SurfaceControl.getPhysicalDisplayToken`，14+ 從 services.jar 載入 `DisplayControl`，9 以前用 `getBuiltInDisplay`），手機本身保持開機，做法同 scrcpy 的關閉螢幕。
+- `gesture <ms> <x,y...>`：在主螢幕注入一筆觸控（第一點 DOWN、中間 MOVE、最後一點 UP，每點間隔 ms 毫秒，用 `InputManagerGlobal`／`InputManager.injectInputEvent` 等待完成模式送出），整筆在同一個程序裡完成，比每一段都執行一次 `input` 快很多（圖形解鎖用）。
 - 所有指令都會先透過 `ActivityThread.systemMain().getSystemContext()` 取得系統 Context（三星的 `MediaMetadataRetriever` 內部也需要），失敗時名稱與圖示改用 `AssetManager.addAssetPath` 直接讀 APK 資源。
 
 ## Sources/PhoneCentre/App
@@ -48,8 +54,10 @@ Sources/PhoneCentre/           Swift 原始碼（下面各章節；PhoneData 為
 
 ### AppDelegate.swift
 - 固定使用深色外觀（`NSApp.appearance = .darkAqua`），不跟隨系統亮色模式——鏡像視窗的標題列與右側欄是照深色設計的，亮色模式下標題列文字會和視窗按鈕疊在一起。
-- 一般模式：啟動 `CacheManager`、`DeviceManager`（輪詢與自動維持連線）、`RemoteManager`、`ShareServer`、選單列，並開啟主視窗。關閉所有視窗後仍留在選單列（關掉選單列圖示時才會結束）。
+- 一般模式：啟動 `CacheManager`、`DeviceManager`（輪詢與自動維持連線）、`DeviceStatusStore`（側邊欄與總覽的手機狀態）、`RemoteManager`、`ShareServer`、選單列，並開啟主視窗。關閉所有視窗後仍留在選單列（關掉選單列圖示時才會結束）。
 - 子程序模式（`ChildMode.isChild`）：只開一個鏡像／App 視窗，視窗關閉就結束。
+- 結束（⌘Q）：`applicationShouldTerminate` 先對開著的虛擬顯示器視窗呼叫 `MirrorModel.prepareForQuit`（獨立 App 視窗跟導覽列的「結束」一樣強制停止 App 並移除 task；桌面模式把 App 送到背景），做完（最多等 6 秒）才真的結束；不處理的話虛擬顯示器一關，App 會被系統搬回手機主螢幕。
+- 主視窗最小大小 1020×830：`NSHostingView.sizingOptions = []`（預設會依 SwiftUI 內容改寫視窗的最小大小，把 `minSize` 蓋掉），再設定 `minSize`／`contentMinSize`；從記住的大小還原時比最小值小就放大。側邊欄寬度由 `lockSidebar` 直接鎖住 NavigationSplitView 底層的 `NSSplitViewItem`（最小＝最大＝236、不能收合，寬度不對就 `setPosition`），顯示時與每次視窗縮放時都會再鎖一次。
 - 建立主選單（只有 App 選單：設定 ⌘,、顯示PhoneCentre ⌘0、隱藏、結束；不放「編輯」「視窗」選單）。
 
 ### AppSettings.swift
@@ -58,6 +66,8 @@ Sources/PhoneCentre/           Swift 原始碼（下面各章節；PhoneData 為
 - 跨程序同步：主程式與每個 Dock 獨立視窗各是一個程序，每 1.5 秒檢查 UserDefaults suite 有沒有被別的程序改過，有就載入（在獨立視窗加入的喜好項目，主程式的總覽、啟動台馬上看得到，不會互相蓋掉）。
 - 儲存位置：預設在 UserDefaults suite `com.iambjlu.PhoneCentre.shared`（固定 suite，Dock 獨立視窗的子程序 bundle id 不同也讀得到）；可在設定選一個資料夾（例如 iCloud Drive），設定寫進該資料夾的 `settings.json`，每 3 秒偵測其他電腦改過的檔案並重新載入。資料夾路徑與自訂 adb 路徑只存在本機。
 - 密碼（手機解鎖密碼、分享密碼、遠端主機密碼）存在鑰匙圈；開啟「密碼也存到這個資料夾」時另外以明碼寫入 `settings.json` 的 `secrets`，另一台 Mac 讀到後會存回自己的鑰匙圈。
+- `remoteEnabled`：遠端 PhoneCentre（Beta）總開關（預設開啟）；關閉時不連遠端主機、不開分享，介面上的遠端項目全部隱藏。
+- `SavedEndpoint.autoReconnect`：記住的無線裝置斷線時要不要自動重連（nil＝舊設定檔，視為開啟；以 `auto` 讀取）。
 - 列舉：`DockMode`（共用／每個視窗各自一個 Dock 圖示）、`AppLaunchTarget`（主螢幕／獨立視窗）、`KeyboardMode`（實體按鍵／Mac 輸入法）、`CacheClearPolicy`（斷線清除／幾天沒連線清除／只依容量）。
 - 釘選的 App：`SettingsData.pinnedApps`（依裝置鍵），`AppSettings.pinned／isPinned／togglePin`。
 - `VideoOptions`：FPS、bitrate、最大解析度；可依裝置（`CacheManager.key`）個別覆寫。
@@ -75,15 +85,16 @@ Sources/PhoneCentre/           Swift 原始碼（下面各章節；PhoneData 為
 
 ### MainView.swift
 主視窗（最小大小 1020×830、側邊欄固定顯示且寬度鎖死 236（側邊欄內容 `frame(width:)` 加 `navigationSplitViewColumnWidth(min＝ideal＝max)`；只設後者時側邊欄會在縮小視窗或重開後被縮到最小），不能收合也不能拖動調整，工具列也沒有收合按鈕）：標準的 `NavigationSplitView`；用最新 SDK 連結後由系統自動套用 Liquid Glass（圓角視窗、側邊欄、工具列按鈕、分頁膠囊）。工具列：隱藏系統標題，裝置名稱與副標題由 `DeviceToolbar` 自己畫成 `navigation` 項目（靠左、比系統預設再往右一點、用 `sharedBackgroundVisibility(.hidden)` 去掉玻璃底）；分頁是系統原生的分段選擇器，放在 `principal` 工具列項目，由系統畫成液態玻璃膠囊（不要自製或包玻璃）。視窗透明，最底層墊一層 `NSVisualEffectView`（`.underWindowBackground`）當毛玻璃底，SwiftUI 內容不加自訂底色。
-- 側邊欄：本機裝置（選中的列底色是強調色，`DeviceRow` 由 MainView 傳入是否選中（並參考 `backgroundProminence`）把圖示改白，避免和底色糊在一起）、記住但目前離線的無線裝置（右鍵可立即重連或忘記）、各遠端 PhoneCentre 的裝置（每區標題有連線狀態燈與選單：重新連線、編輯、移除；沒有裝置時顯示狀態與「重新連線」按鈕）；底部顯示 adb server 狀態與最近事件。
+- 側邊欄：本機裝置（`DeviceRow`：第一行名稱、第二行無線位址或廠牌型號（`Device.modelLine`）、第三行 Android 版本；右邊是跟鏡像視窗同款的 `StatusIndicator`（30pt，資料來自 `DeviceStatusStore`，讀到之前轉圈圈），離線才顯示橘色燈；選中的列底色是強調色，由 MainView 傳入是否選中（並參考 `backgroundProminence`）把圖示改白；無線裝置的右鍵選單：鏡像畫面、自動重新連線（開關）、中斷連線（保留在清單）、中斷連線並從清單移除）、記住但目前沒連上的無線裝置（`SavedEndpointRow`：狀態寫「已中斷連線」「離線」「離線（不自動連線）」「連線中…」，右邊一鍵連線；右鍵：連線、自動重新連線、從清單移除）、各遠端 PhoneCentre 的裝置（遠端功能關閉時整區隱藏；標題寫「（遠端 Beta）」，有連線狀態燈與選單：重新連線、編輯、移除；沒有裝置時顯示狀態與「重新連線」按鈕）；底部顯示 adb server 狀態與最近事件。
 - 內容：分頁「總覽／啟動台／檔案／通知／簡訊／通話記錄／相機膠卷」；找不到 adb 時顯示 `AdbSetupView`（一鍵下載 Google Platform-Tools）。
 
 ### AddDeviceSheet.swift
 - 無線 ADB：「USB 轉無線」（已連上的 USB 裝置一鍵 `adb tcpip 5555`，取得 wlan0 IP 後自動 `adb connect`）、`adb connect`、Android 11+ 的配對（`adb pair`）、`adb mdns services` 找到的裝置。
+- 分頁標示「遠端 PhoneCentre (Beta)」；遠端功能關閉時不顯示分頁選擇器，只剩無線 ADB。
 - 遠端 PhoneCentre：新增主機（名稱、主機、port、密碼）、Bonjour（`_phonecentre._tcp`）瀏覽區域網路上的 PhoneCentre、管理已加入的主機（重連、編輯 `RemoteHostEditSheet`、移除）。
 
 ### DeviceOverview.swift
-裝置總覽：標題旁的手機圖示點一下就開鏡像畫面；最上面是 `PinnedAppsStrip`（分成兩排：「喜好項目」＝所有釘選的，已開啟的在前、還沒開的在後；「已開啟」＝已開啟但沒加入喜好項目的；目前在最上層的 App 排在它那一排最前面（`AppCatalog.sections`）；圖示沒有愛心標記；點了依啟動台設定開啟；右鍵選單順序與 App 列相同：強制停止、在獨立視窗開啟、（分隔線）加入／移除喜好項目；每 3 秒更新已開啟與目前在用的標記）、鏡像畫面、桌面模式(Beta)、安裝 APK、設定解鎖密碼、裝置資訊（手機狀態、儲存空間讀到之前相關欄位只轉圈圈，不顯示預設的錯誤資訊；資料來自 `DeviceStatus.fetch` 一次取得：型號、Android 版本、螢幕、生產日期（三星的 `ril.rfcal_date` RF 校正日，約等於出廠日；沒有就不顯示）、電信業者（不管 SIM 卡是哪家，只寫目前收到的電信，來自基地台資訊裡已註冊的網路名稱；雙卡時每張有插卡的 SIM 各一列，列名「電信業者1／電信業者2」；正常服務寫「中華電信 LTE -106dBm」，只能撥緊急電話（`mIsEmergencyOnly=true` 且沒有正常服務）寫「僅限緊急通話 LTE -106dBm (中華電信)」，無線電關閉（飛航模式等）寫「行動網路已關閉」）、Wi-Fi（名稱與 IP）、電池（依電池狀態碼區分：插電但沒在充電會寫「已插電，未充電」，不再一律寫充電中）、電池容量（目前最大／設計 mAh 與百分比）、循環次數、儲存空間（已用／共，剩餘可用空間與占總容量的百分比，用 `df -k /data` 計算）、序號；序號預設隱藏（標題旁的 USB／無線位址照常顯示），按眼睛按鈕顯示／隱藏）、拖放區（APK 安裝；照片影片存相機膠卷；其他存「下載項目」＝手機的 `/sdcard/Download`）。
+裝置總覽：標題旁的手機圖示點一下就開鏡像畫面；標題列最右邊是跟鏡像視窗同款的狀態圖（`StatusIndicator` 52pt，點一下也開鏡像；狀態先沿用 `DeviceStatusStore` 已讀到的，不用再轉圈圈）；最上面是 `PinnedAppsStrip`（分成兩排：「喜好項目」＝所有釘選的，已開啟的在前、還沒開的在後；「已開啟」＝已開啟但沒加入喜好項目的；目前在最上層的 App 排在它那一排最前面（`AppCatalog.sections`）；圖示沒有愛心標記；點了依啟動台設定開啟；右鍵選單順序與 App 列相同：強制停止、在獨立視窗開啟、（分隔線）加入／移除喜好項目；每 3 秒更新已開啟與目前在用的標記）、鏡像畫面、桌面模式(Beta)、安裝 APK、設定解鎖密碼、重新啟動（先確認，`svc power reboot`，不行再 `reboot`）、裝置資訊（手機狀態、儲存空間讀到之前相關欄位只轉圈圈，不顯示預設的錯誤資訊；資料來自 `DeviceStatus.fetch` 一次取得：型號、Android 版本、螢幕、生產日期（三星的 `ril.rfcal_date` RF 校正日，約等於出廠日；沒有就不顯示）、電信業者（不管 SIM 卡是哪家，只寫目前收到的電信，來自基地台資訊裡已註冊的網路名稱；雙卡時每張有插卡的 SIM 各一列，列名「電信業者1／電信業者2」；正常服務寫「中華電信 LTE -106dBm」，只能撥緊急電話（`mIsEmergencyOnly=true` 且沒有正常服務）寫「僅限緊急通話 LTE -106dBm (中華電信)」，無線電關閉（飛航模式等）寫「行動網路已關閉」）、Wi-Fi（名稱與 IP）、電池（依電池狀態碼區分：插電但沒在充電會寫「已插電，未充電」，不再一律寫充電中）、電池容量（目前最大／設計 mAh 與百分比）、循環次數、儲存空間（已用／共，剩餘可用空間與占總容量的百分比，用 `df -k /data` 計算）、序號；序號預設隱藏（標題旁的 USB／無線位址照常顯示），按眼睛按鈕顯示／隱藏）、拖放區（APK 安裝；照片影片存相機膠卷；其他存「下載項目」＝手機的 `/sdcard/Download`）。
 
 ## Sources/PhoneCentre/ADB
 
@@ -101,19 +112,20 @@ Sources/PhoneCentre/           Swift 原始碼（下面各章節；PhoneData 為
 - push／pull／install／pair／mdns 走 adb CLI（遠端端點加 `-H -P`）。push 後發送媒體掃描廣播。
 
 ### Device.swift
-`Device`（serial、狀態、型號、端點，id 遠端為 `<remoteID>|serial`）與 `DeviceInfo`（裝置名稱、廠牌、型號、Android 版本、SDK、ro.serialno、螢幕大小、密度）。
+`Device`（serial、狀態、型號、端點，id 遠端為 `<remoteID>|serial`；`modelLine`＝廠牌＋型號）與 `DeviceInfo`（裝置名稱、廠牌、型號、Android 版本、SDK、ro.serialno、螢幕大小、密度）。
 `DeviceInfo.fetch` 每個欄位加名稱再解析，並丟掉錯誤訊息（手機剛開機、settings 服務還沒起來時會印「cmd: Can't find service: settings」）；型號、版本、SDK 不合理就回傳 nil，由 `DeviceManager` 下次輪詢重試，不把壞資料存進快取。總覽的手機狀態每 10 秒更新一次。
 
 ### DeviceManager.swift
 每 2 秒輪詢所有端點的 `host:devices-l`。
 - 自動維持連線：本機 adb server 連不上（例如被其他程式砍掉）時自動 `adb start-server`；記住的無線裝置斷線時以指數退避重連（最長 60 秒）；連不上時用 `adb mdns services` 依 ro.serialno 找出新的無線偵錯 port 並更新紀錄。
-- 記住連線過的無線裝置（同一支手機換 port 會更新舊紀錄）。
+- 記住連線過的無線裝置（同一支手機換 port 會更新舊紀錄，沿用原本的自動重連設定）。
+- 自動重連只處理 `auto` 開啟、且不在 `paused` 裡的記住裝置。`disconnectKeeping`＝中斷連線但保留在清單（加入 `paused`，這次執行期間不自動重連）；`reconnectSaved`／`connect` 會清掉 `paused` 並立刻連線；`disconnect`＝中斷連線並從清單移除；`setAutoReconnect` 切換單台的自動重連；`saved(for:)` 依位址或 ro.serialno 找記住的紀錄。
 - 裝置清單變動時通知 `CacheManager`。
 
 ### AppCatalog.swift
 一台裝置的 App 清單、圖示（存在 `CacheManager` 的 icons 目錄）、已開啟與最近使用的 App。
 - 已開啟／最近：解析 `dumpsys activity recents` 的每個「Recent #N」區塊，取 `realActivity`／`cmp=` 的套件名；找不到時以 affinity 對已安裝套件做前綴比對（例如 `com.android.settings.root` → `com.android.settings`）；排除桌面、最近使用畫面。程序還在（`ps -A`）的算「已開啟」。另以 `dumpsys activity activities` 的 `topResumedActivity` 取得目前在最上層的 App（`foreground`，桌面與系統介面不算）。最上層的 App 一定算「已開啟」，即使它不在最近使用清單裡（例如排除在最近使用之外的系統設定頁）。
-- 啟動、強制停止、解除安裝、開啟 App 資訊。
+- 啟動、強制停止、解除安裝、開啟 App 資訊。強制停止會一併移除該 App 在最近使用裡的 task（`parseRecentTasks` 從「Task{… #id …}」取 task id，交給輔助程式 `removetasks`，失敗退回 `am stack remove`）：常駐程序（例如 `com.android.phone`）`am force-stop` 不會結束，task 也不會消失，以前會一直卡在「已開啟」清單。
 - `icon(for:)` 在 view body 中呼叫也安全（不會同步修改 @Published）。
 
 ### HelperTool.swift
@@ -159,7 +171,8 @@ Mac 虛擬 keyCode（與鍵盤配置、輸入法無關）→ Android keycode；�
 - 自動維持連線：連線中斷且裝置回來就重連。
 - 虛擬顯示器 id：連線後以 `dumpsys display` 找名為 scrcpy、大小相符且尚未被其他視窗認領的顯示器（`claimedDisplays`），用於 `input -d`、`screencap -d`、搬移 App。
 - 調整視窗大小：先保留舊 session，用新大小另開 session（不帶 startApp），新顯示器就緒後以 `am display move-stack` 把舊顯示器的 root task 搬過去，搬完會確認舊顯示器上已經沒有 task（沒搬乾淨最多重試 4 次）才關舊 session，App 不會經過主螢幕；搬移失敗才退回重新啟動 App。`nudgeDisplayConfig` 先確認虛擬顯示器還在才動它的密度——`wm density -d <不存在的 id>` 會退回去操作主螢幕，會把主螢幕的密度改掉再改回、害主螢幕重排。
-- 關閉虛擬顯示器視窗（`MirrorWindowController.windowShouldClose`）：`sendAppsToBackground` 先把 App 搬到主螢幕，立刻 `am start --activity-reorder-to-front` 把主螢幕原本最上層的 Activity 拉回來，App 留在背景。
+- 關閉虛擬顯示器視窗（`MirrorWindowController.windowShouldClose`，⌘W 與導覽列的「背景執行並關閉」都走這裡）：`sendAppsToBackground` 從 `dumpsys activity activities` 取主螢幕最上層的 task id，交給輔助程式 `tobg` 在同一個程序內搬移並把原本的 task 拉回最上層，App 直接進背景、不經過主螢幕；輔助程式失敗才退回 `am display move-stack`＋`am start --activity-reorder-to-front`。之後 `am kill` 收掉程序。
+- 導覽列的「結束」（`forceStopAndClose`）與 ⌘Q（`prepareForQuit`）都用 `AppCatalog.forceStop`（強制停止並移除 task）。
 - 啟動後 `ensureAppOnDisplay`：App 本來就在主螢幕（或別的顯示器）執行時，啟動指令可能只把原 task 叫到前面、新視窗是黑的；2.5 秒後顯示器上仍沒有 task，就用 `am stack list` 找到該 App 的 root task，`am display move-stack` 搬過來（找不到就重送 startApp，最多 3 次）。
 - 啟動前 App 程序就在跑（例如從主螢幕拖出來）或 task 被搬過來時，`redrawApp` 強制停止 App 後在新顯示器重開（跟手動「關掉再拖出來」一樣；App 程序在別的密度的顯示器上跑過，只搬 task 它會停在舊密度，太大）；關閉視窗把 App 送回背景後再 `am kill` 收掉程序，下次在主螢幕打開才不會太小。其他情況（調整大小搬移）呼叫 `nudgeDisplayConfig`：`wm density` 加 1 再改回，觸發一次螢幕設定變更讓 App 重新排版，避免跑版。
 - 獨立視窗每 2 秒檢查顯示器上是否還有 root task（解析 `taskId=… rootTaskId=…` 行；連續兩次沒有才算），沒有就 `appClosed`，視窗顯示「XXX 已關閉」與「打開」按鈕，背景是最後一張不是全黑的關鍵幀（`VideoDecoder.lastGoodFrame`，每個關鍵幀解碼一次，只有獨立視窗開啟）霧化後的畫面。 App 已關閉時：卡片上「打開」下面有次要的「關閉視窗」按鈕；使用者在手機上自己重新打開這個 App（跑在主螢幕）時，視窗會自動把它搬回來並收起提示（`topResumedPackage`）；整個畫面區毛玻璃（最後一幀霧化再蓋一層材質，連兩側黑邊一起）、導覽列全部反灰不能按。
@@ -170,10 +183,10 @@ Mac 虛擬 keyCode（與鍵盤配置、輸入法無關）→ Android keycode；�
 - 操作：按鍵、黑屏切換、旋轉（`setRotation`／`setAutoRotate`，狀態讀自 `DeviceStatus`）、截圖（先白閃再淡出；主螢幕 `screencap`，虛擬顯示器或失敗時取鏡像關鍵幀；結果必須是 PNG 才存檔）、鎖定偵測（虛擬顯示器視窗也每 3 秒偵測，鎖定時顯示提示）、Mac 端靜音、啟動 App、截圖存到桌面、套用畫質（重啟）、拖放處理、Touch ID 解鎖。
 
 ### DeviceStatus.swift
-手機狀態：一次 shell 取得 `dumpsys battery`（電量、狀態碼、是否接電；「充電中」只看狀態碼 2，沒有狀態碼才看是否接電）、`dumpsys connectivity`（預設網路是 Wi-Fi 還是 MOBILE[LTE] → 4G/5G）、`dumpsys telephony.registry`（有資料連線的那張 SIM，否則第一張；訊號 level 0–4、是否有服務）、`gsm.sim.state`。`MirrorModel` 每 5 秒更新；另含 Wi-Fi RSSI（格數）、自動旋轉與目前鎖定方向。
+手機狀態：電信業者取自 `mCellInfo` 裡 `mRegistered=YES` 的基地台名稱，逐個檢查，名稱是空的或全是數字（例如三星雙卡時那筆無效的 WCDMA「mMcc=000 mAlphaLong=000000」）就跳過，都沒有就用 `mCellIdentity` 的名稱。`DeviceStatusStore`：主視窗用的共用狀態，每 10 秒更新所有在線且已讀到裝置資訊的裝置（側邊欄狀態圖、總覽）。一次 shell 取得 `dumpsys battery`（電量、狀態碼、是否接電；「充電中」只看狀態碼 2，沒有狀態碼才看是否接電）、`dumpsys connectivity`（預設網路是 Wi-Fi 還是 MOBILE[LTE] → 4G/5G）、`dumpsys telephony.registry`（有資料連線的那張 SIM，否則第一張；訊號 level 0–4、是否有服務）、`gsm.sim.state`。`MirrorModel` 每 5 秒更新；另含 Wi-Fi RSSI（格數）、自動旋轉與目前鎖定方向。
 
 ### NavBar.swift
-右側欄 `SideColumn`：整條是深色毛玻璃底（`GlassBackground`，視窗透明，桌面透出來），上面疊兩塊圓角液態玻璃面板（`liquidPanel`，macOS 26 用 `glassEffect`＋`GlassEffectContainer`，舊系統用材質）：App 列一塊（釘選＋執行中，高度跟圖示數量，放得下就剛好包住，放不下才捲動；沒有圖示就不畫）、導覽列一塊（獨立視窗沒有 App 列；導覽項目的優先權比「其他」盤子高：空間不夠時先縮「其他」，縮到只剩三個圖示還不夠，才輪到導覽項目縮小並可捲動（`SideColumn.allocate` 用量測到的自然高度統一分配）；金剛三鍵（返回、主畫面、多工）固定在最下面）。上方 `StatusIndicator`（第一次讀到手機狀態（`MirrorModel.statusLoaded`）之前只顯示轉圈圈；外環＝電池，分左右兩段、上方留給電量數字（不加 %）、充電為綠色、≤20% 紅色；中間是較大的 Wi-Fi（依 RSSI 格數）或 4G/5G；訊號格是排在電池環下方缺口、同一個圓上的 4 個點（點與點、點與環端的角度間隔相同）；點一下狀態環（主螢幕）會降下通知中心；電量數字壓在環頂端缺口的正中間，不與環重疊；點與環一起在同一個 Canvas 繪製，大小一致，格數取自三星 `SignalBarInfo`），中間 App 列（獨立視窗改在欄位正中間顯示目前 App 的圖示與名稱），下方導覽列。導覽列由上到下（最下面三顆依序是返回、主畫面、多工）：畫質設定（`environments.circle`）、輸入方式（選單，`keyboard`＝實體按鍵、`keyboard.fill`＝Mac 輸入法）、桌面模式的啟動台、模擬定位（獨立視窗沒有）、聲音（彈窗，見 `SoundPopover.swift`）、截圖、旋轉（選單：四個角度的 iPhone 圖示（`iphone.gen1`，有 Home 鍵，上下左右一眼就分得出來）（系統的單選 Picker，勾選記號跟開關一樣在左邊；輸入方式選單也是）、自動旋轉開關、「強制所有 App 使用這個方向」開關——`wm set-ignore-orientation-request true` 加 `wm fixed-to-user-rotation enabled`，讓只支援直向／橫向的 App 也照設定的方向，關閉就恢復，狀態來自 `DeviceStatus.forceOrientation`；獨立視窗是旋轉視窗方向）、黑屏與電源（只有主螢幕）、返回、主畫面、多工。獨立視窗的主畫面是「隱藏視窗」（`xmark.square`；視窗 `orderOut`，連線與虛擬顯示器繼續，App 留在原顯示器；從 App 列再開或點 Dock 圖示叫回來）、多工是「強制停止並關閉視窗」（六角形加叉）。多工「|||」、主畫面（圓角方形）、返回「<」是仿 One UI 的自繪圖示。`GlassDivider` 是玻璃面板裡用的分隔線（1pt 前景色線，系統預設的 `Divider` 在玻璃上幾乎看不見；App 列、通知／通話記錄清單、簡訊對話列表都用它）。`glassCard` 是疊在畫面上所有東西（提示、橫幅、已關閉卡片）共用的毛玻璃底。
+右側欄 `SideColumn`：整條是深色毛玻璃底（`GlassBackground`，視窗透明，桌面透出來），上面疊兩塊圓角液態玻璃面板（`liquidPanel`，macOS 26 用 `glassEffect`＋`GlassEffectContainer`，舊系統用材質）：App 列一塊（釘選＋執行中，高度跟圖示數量，放得下就剛好包住，放不下才捲動；沒有圖示就不畫）、導覽列一塊（獨立視窗沒有 App 列；導覽項目的優先權比「其他」盤子高：空間不夠時先縮「其他」，縮到只剩三個圖示還不夠，才輪到導覽項目縮小並可捲動（`SideColumn.allocate` 用量測到的自然高度統一分配）；金剛三鍵（返回、主畫面、多工）固定在最下面）。上方 `StatusIndicator`（第一次讀到手機狀態（`MirrorModel.statusLoaded`）之前只顯示轉圈圈；外環＝電池，分左右兩段、上方留給電量數字（不加 %）、充電為綠色、≤20% 紅色；中間是較大的 Wi-Fi（依 RSSI 格數）或 4G/5G；訊號格是排在電池環下方缺口、同一個圓上的 4 個點（點與點、點與環端的角度間隔相同）；點一下狀態環（主螢幕）會降下通知中心；電量數字壓在環頂端缺口的正中間，不與環重疊；點與環一起在同一個 Canvas 繪製，大小一致，格數取自三星 `SignalBarInfo`；電量數字字級隨大小縮放（最大 12pt），側邊欄與總覽也用同一個元件），中間 App 列（獨立視窗改在欄位正中間顯示目前 App 的圖示與名稱），下方導覽列。導覽列由上到下（最下面三顆依序是返回、主畫面、多工）：畫質設定（`environments.circle`）、輸入方式（選單，`keyboard`＝實體按鍵、`keyboard.fill`＝Mac 輸入法）、桌面模式的啟動台、模擬定位（獨立視窗沒有）、聲音（彈窗，見 `SoundPopover.swift`）、截圖、旋轉（選單：四個角度的 iPhone 圖示（`iphone.gen1`，有 Home 鍵，上下左右一眼就分得出來）（系統的單選 Picker，勾選記號跟開關一樣在左邊；輸入方式選單也是）、自動旋轉開關、「強制所有 App 使用這個方向」開關——`wm set-ignore-orientation-request true` 加 `wm fixed-to-user-rotation enabled`，讓只支援直向／橫向的 App 也照設定的方向，關閉就恢復，狀態來自 `DeviceStatus.forceOrientation`；獨立視窗是旋轉視窗方向）、黑屏與電源（只有主螢幕）、返回、主畫面、多工。獨立視窗的主畫面是「隱藏視窗」（`xmark.square`；視窗 `orderOut`，連線與虛擬顯示器繼續，App 留在原顯示器；從 App 列再開或點 Dock 圖示叫回來）、多工是「強制停止並關閉視窗」（六角形加叉）。多工「|||」、主畫面（圓角方形）、返回「<」是仿 One UI 的自繪圖示。`GlassDivider` 是玻璃面板裡用的分隔線（1pt 前景色線，系統預設的 `Divider` 在玻璃上幾乎看不見；App 列、通知／通話記錄清單、簡訊對話列表都用它）。`glassCard` 是疊在畫面上所有東西（提示、橫幅、已關閉卡片）共用的毛玻璃底。
 
 ### SoundPopover.swift
 聲音彈窗（跟畫質彈窗同一種風格）：
@@ -186,10 +199,10 @@ Mac 虛擬 keyCode（與鍵盤配置、輸入法無關）→ Android keycode；�
 模擬定位：`LocationSimulatorSheet` 用 MapKit 地圖（點選或搜尋）選位置，經由 `cmd location providers add-test-provider／set-test-provider-location`（gps 與 network，先以 `appops` 允許 shell 的 MOCK_LOCATION）讓手機採用；由 `LocationSimulation`（單例，依裝置記錄）負責維持：套用後每 5 秒只重送位置（測試提供者不見了就整組重建），跟對話框開不開無關，關掉對話框也不會取消；「停止模擬」只在模擬中才出現，會移除測試提供者。導覽列的定位圖示模擬中換成 `location.slash.fill`，沒模擬是 `location`；重開對話框會顯示目前模擬的位置。
 
 ### PatternPad.swift
-3×3 圖形密碼輸入元件（點編號 1–9）。解鎖密碼儲存為 `pattern:<編號>`；`LockScreenHelper.unlock` 用 `uiautomator dump` 找 `LockPatternView` 的範圍（找不到就用螢幕下半部推測），再用 `input motionevent` 畫出圖形。
+3×3 圖形密碼輸入元件（點編號 1–9）。解鎖密碼儲存為 `pattern:<編號>`；`LockScreenHelper.unlock` 用 `uiautomator dump` 找 `LockPatternView` 的範圍（找不到就用螢幕下半部推測；成功解鎖後依裝置記住範圍，下次不用再跑 uiautomator，失敗就清掉重找），再畫出圖形：有主螢幕鏡像連線就用 scrcpy 觸控直接送，否則交給輔助程式 `gesture`，都不行才退回 `input motionevent`。圖形解鎖是 Beta：設定畫面的選項寫「圖形 (Beta)」並附說明（部分舊機例如 Galaxy S8 圖形位置較低，可能畫不到）。
 
 ### MirrorContentView.swift
-鏡像視窗內容：畫面在左，右側 `SideColumn`（寬度 `MirrorLayout.railWidth`，毛玻璃，沒有上方工具列）內含 `AppRail`（主鏡像與桌面模式；分成兩塊獨立的液態玻璃盤子：第一塊只放現在正在用的 App（`catalog.foreground`，只有一個，完整顯示、不捲動）；第二塊放其他——已開啟的喜好項目 → 其他已開啟的 App，一條分隔線，分隔線之後才是還沒開的喜好項目（空間不夠時第二塊先縮小，放不下時上下有箭頭可以捲動；排序來自 `AppCatalog.barOrder`；右鍵選單由上到下：強制停止、在獨立視窗開啟、（分隔線）加入／移除喜好項目；App 列、啟動台、總覽三處用的是同一份喜好項目清單，在任何一處加入或移除，其他兩處都會一起變），執行中的右邊有小圓點，只有目前在最上層的那個 App 拉長成圓角短線（`RunningMark`，啟動台、總覽、選單列同樣規則），不再顯示最近使用但已關閉的 App；可把圖示往左或往右拖出 App 列超過距離後放開，就在放開位置以獨立視窗開啟，拖曳時由 `DragGhost` 顯示跟著游標的圖示）、解鎖橫幅（往下留 49 點，不擋住手機狀態列）、App 已關閉提示（「XXX 已關閉」＋打開按鈕）、鎖定提示、置中的提示訊息與截圖白閃、組字文字。另含 `AppIconView`、`VideoSettingsPopover`（預設檔分段選擇＋影格率／解析度選單＋位元率滑桿）、`LockPasswordSheet`（PIN／密碼或圖形）、`MiniLauncher`、`DragGhost`。
+鏡像視窗內容：畫面在左，右側 `SideColumn`（寬度 `MirrorLayout.railWidth`，毛玻璃，沒有上方工具列）內含 `AppRail`（主鏡像與桌面模式；分成兩塊獨立的液態玻璃盤子：第一塊只放現在正在用的 App（`catalog.foreground`，只有一個，完整顯示、不捲動）；第二塊放其他——已開啟的喜好項目 → 其他已開啟的 App，一條分隔線，分隔線之後才是還沒開的喜好項目（空間不夠時第二塊先縮小，放不下時上下有箭頭可以捲動；排序來自 `AppCatalog.barOrder`；右鍵選單由上到下：強制停止、在獨立視窗開啟、（分隔線）加入／移除喜好項目；App 列、啟動台、總覽三處用的是同一份喜好項目清單，在任何一處加入或移除，其他兩處都會一起變），執行中的右邊有小圓點，只有目前在最上層的那個 App 拉長成圓角短線（`RunningMark`，啟動台、總覽、選單列同樣規則），不再顯示最近使用但已關閉的 App；可把圖示往左或往右拖出 App 列超過距離後放開，就在放開位置以獨立視窗開啟，拖曳時由 `DragGhost` 顯示跟著游標的圖示）、解鎖橫幅（主螢幕往下留 49 點，不擋住手機狀態列；獨立視窗與桌面模式也用同一個可關閉的小橫幅、留 12 點，不再用擋住畫面正中間的大卡片——手機鎖著時第二螢幕常常還看得到 App；解鎖後再鎖會重新出現）、App 已關閉提示（「XXX 已關閉」＋打開按鈕）、鎖定提示、置中的提示訊息與截圖白閃、組字文字。另含 `AppIconView`、`VideoSettingsPopover`（預設檔分段選擇＋影格率／解析度選單＋位元率滑桿）、`LockPasswordSheet`（PIN／密碼或圖形）、`MiniLauncher`、`DragGhost`。
 
 ### MirrorWindowController.swift
 鏡像視窗（主螢幕鏡像與獨立視窗都會記住上次的大小：主螢幕記高度、寬度依手機畫面比例算；視窗透明，只在標題列與右側欄兩塊鋪 `NSVisualEffectView` 毛玻璃，手機畫面區域是黑底、不鋪以省渲染資源）。主螢幕鏡像依畫面比例調整與縮放（保留左側欄空間；直向時視窗最小大小 364×636、橫向 636×364（含標題列，`MirrorLayout.portraitMinFrame…／landscapeMinFrame…`）；所有鏡像視窗（含獨立 App 視窗、桌面模式）都套用同一組最小大小：橫向 636×364、直向 364×636，橫直向主螢幕鏡像看手機畫面比例、虛擬顯示器視窗看視窗自己的形狀；縮放時 `windowWillResize` 也會即時夾住；從上次記住的大小還原（獨立視窗常見）或程式設定大小時，`clampToMin` 會把過小的視窗放大到最小值，主螢幕鏡像維持影像比例時兩邊放大到夠為止。橫向模式且視窗高度未滿 636（內容高度 < 608，`compactContentHeight`）時，右側欄整排移到視窗底部變成橫條；直向模式右側欄永遠在右邊（`SideColumn(horizontal: true)`：狀態環、現在在用的 App、其他（可左右捲動）、最右邊一塊盤子放導覽項目（長度適中、不撐滿，放不下才左右捲動）、一條分隔線、金剛三鍵（固定在最右邊）；空間夠就在「現在在用的 App」旁邊寫名字、不夠只剩圖示（`ViewThatFits` 依實際空白寬度判斷，不是固定的視窗寬度）；獨立視窗沒有其他 App 盤子，現用的 App 放在狀態環與導覽盤子之間那塊空白的正中間），影像區用整個寬度、下面多一條 `bottomBarHeight` 高的橫條；虛擬顯示器視窗用內容最小高度 `MirrorLayout.minContentHeight`）；虛擬顯示器視窗可自由調整，放開邊框時請 `MirrorModel` 重建顯示器。虛擬顯示器視窗會記住上次的大小（frame autosave），重開時先還原大小、再依該大小建立虛擬顯示器（`presetDisplay`），不再被影像大小覆蓋；可指定開啟位置，否則錯開排列；App 名稱載入後更新標題；關閉時停止工作階段。
@@ -198,13 +211,13 @@ Mac 虛擬 keyCode（與鍵盤配置、輸入法無關）→ Android keycode；�
 拖進來的檔案：`.apk` 安裝；png/jpeg/jpg/heic/heif/mov/mp4 存到 `/sdcard/DCIM/Camera`；資料夾與其他檔案存到 `/sdcard/Download`。
 
 ### LockScreenHelper.swift
-以 `dumpsys window`／`dumpsys activity activities` 的 keyguard 欄位判斷是否在鎖定畫面；解鎖密碼存在鑰匙圈（鍵 `lock.<裝置鍵>`）；`unlock` 先以 Touch ID（或 Mac 密碼）驗證，再喚醒、上滑、輸入密碼（或畫圖形）、Enter；獨立視窗不用鏡像連線而走 adb `input`。
+以 `dumpsys window`／`dumpsys activity activities` 的 keyguard 欄位判斷是否在鎖定畫面；解鎖密碼存在鑰匙圈（鍵 `lock.<裝置鍵>`）；`unlock` 先以 Touch ID（或 Mac 密碼）驗證，再喚醒、關閉手機面板（黑屏，旁人看不到圖形或數字：有主螢幕鏡像連線用 scrcpy 的面板電源，否則用輔助程式 `power 0`）、上滑、輸入密碼（或畫圖形）、Enter，結束後把面板打開（主鏡像本來就開著「黑屏」就維持關閉）；獨立視窗或子程序的請求，若同一支手機有開主螢幕鏡像就借用它的連線，沒有才走 adb `input`。
 Dock 獨立視窗的子程序（簽章身分不同的副本）完全不碰鑰匙圈（`Keychain` 在子程序一律回傳 nil），否則每個副本都會各自跳出「想使用鑰匙圈中的機密資訊」。需要解鎖時，子程序用 `DistributedNotificationCenter` 送出「要解鎖哪支手機」的請求（只含序號與端點，不含密碼），由主程式驗證 Touch ID、讀鑰匙圈、用 adb 解鎖後回報結果；主程式沒開就解鎖不了（約 90 秒後逾時）。
 
 ## Sources/PhoneCentre/Files
 
 ### RemoteFiles.swift
-`RemoteFile` 與 `RemoteFS`：用 `stat -L -c '%F|%s|%Y|%n'` 列目錄、mkdir、mv、rm（附媒體掃描）、下載到快取（`files` 目錄，大小相同就不重抓）。`remoteFileItemProvider` 讓檔案可拖到 Finder（系統要資料時才從手機下載；有副檔名的檔案不設 suggestedName，避免系統再補一次副檔名變成 .jpg.jpeg）。`stableHash` 是跨程序穩定的短雜湊。
+`RemoteFile` 與 `RemoteFS`：用 `stat -L -c '%F|%s|%Y|%n'` 列目錄（`listRecursive` 用 `find . -type f ! -path '*/.*' -exec stat …` 列出整個資料夾樹，略過隱藏檔與隱藏資料夾）、mkdir、mv、rm（附媒體掃描）、下載到快取（`files` 目錄，大小相同就不重抓）。`remoteFileItemProvider` 讓檔案可拖到 Finder（系統要資料時才從手機下載；有副檔名的檔案不設 suggestedName，避免系統再補一次副檔名變成 .jpg.jpeg）。`stableHash` 是跨程序穩定的短雜湊。
 
 ### FileBrowserView.swift
 Finder 風格檔案管理：位置側邊欄、上一頁／下一頁／上一層、路徑列、可排序表格（資料夾排前面）、雙擊開啟、快速查看（`QuickLookPresenter`）、重新命名、刪除、新增資料夾、上傳、下載、拖入上傳、拖出到 Finder、顯示隱藏檔。
@@ -212,7 +225,7 @@ Finder 風格檔案管理：位置側邊欄、上一頁／下一頁／上一層�
 ## Sources/PhoneCentre/Photos
 
 ### CameraRollView.swift
-Apple「照片」風格相機膠卷：相簿選擇（DCIM 與 Pictures 下的資料夾）、縮放滑桿、多選（⌘／⇧ 點選）、匯出、刪除、拖入匯入、拖出到 Finder、`MediaViewer` 檢視原圖或播放影片（影片用 AppKit 的 `AVPlayerView`，不用 SwiftUI 的 `VideoPlayer`：後者在新系統會因 `_AVKit_SwiftUI` 類別中繼資料初始化失敗而崩潰）（左右鍵切換）。
+Apple「照片」風格相機膠卷：相簿選擇（預設「所有照片」＝DCIM 底下所有資料夾（含子資料夾）的照片與影片；另有 DCIM 與 Pictures 下的各資料夾；拖入匯入時「所有照片」存到相機資料夾）、篩選（`MediaFilter`：全部／照片／影片）、縮放滑桿、多選（⌘ 點選加入或取消、⇧ 點選從上一次點的到這一個之間的範圍、⌘A 全選目前篩選後的項目）、匯出（⌘E；同名檔案自動加編號，不互相覆蓋）、刪除、拖入匯入、拖出到 Finder、`MediaViewer` 檢視原圖或播放影片（影片用 AppKit 的 `AVPlayerView`，不用 SwiftUI 的 `VideoPlayer`：後者在新系統會因 `_AVKit_SwiftUI` 類別中繼資料初始化失敗而崩潰）（左右鍵切換）。
 `ThumbnailLoader`：格子出現才排隊、消失就取消，80ms 內的請求合併成一批交給手機端 `thumbs` 產生縮圖，結果存到 `thumbs` 快取（鍵含路徑、大小、修改時間與縮圖版本）。
 
 ## Sources/PhoneCentre/PhoneData
@@ -253,13 +266,14 @@ Apple「照片」風格相機膠卷：相簿選擇（DCIM 與 Pictures 下的資
 PhoneCentre 之間的加密通道：Network.framework 的 TLS（PSK，`TLS_PSK_WITH_AES_128_GCM_SHA256`），PSK 由密碼經 PBKDF2-SHA256（20 萬次）推導，雙方密碼相同才能完成握手。`pipe` 雙向轉送兩條連線。
 
 ### RemoteManager.swift
+- 遠端功能是 Beta，`AppSettings.remoteEnabled` 關閉時 `ShareServer.apply` 不開 port、`RemoteManager.apply` 把所有通道關掉（等於沒有任何主機）、`reconnect` 不動作。
 - `ShareServer`：開啟分享時在指定 port 監聽（並以 Bonjour 公告），通過 PSK 握手的連線轉送到本機 adb server（127.0.0.1:5037）；同一來源連續失敗 5 次起暫時封鎖。
 - `RemoteManager`：每個遠端主機在本機 127.0.0.1 開一個隨機 port，進來的連線以 TLS 轉送到遠端；每 5 秒用 `host:version` 確認通道可用。對本機程式來說這就是另一個 adb server（`AdbEndpoint` 帶 remoteID），鏡像、檔案、App 等功能都可直接使用。
 
 ## Sources/PhoneCentre/Settings
 
 ### SettingsView.swift
-設定視窗分頁：一般（選單列、Dock 模式、啟動台開啟方式）、連線（自動維持連線、記住的無線裝置、adb 路徑與下載）、鏡像（預設畫質、鍵盤模式、剪貼簿同步、音訊與手機靜音、黑屏、Touch ID 解鎖提示）、分享（開關、port、密碼、狀態）、儲存（設定檔資料夾／iCloud Drive、密碼是否同步、簡訊／通知／通話記錄的收集開關與各自的保存天數、快取用量與上限、清除時機、清除快取、清除 Dock 副本）。
+設定視窗分頁：一般（選單列、Dock 模式、啟動台開啟方式）、連線（自動維持連線、記住的無線裝置、adb 路徑與下載）、鏡像（預設畫質、鍵盤模式、剪貼簿同步、音訊與手機靜音、黑屏、Touch ID 解鎖提示）、遠端 (Beta)（最上面是總開關「啟用遠端 PhoneCentre 功能 (Beta)」，關閉時分享區塊停用並立即關閉所有遠端通道與分享；分享開關、port、密碼、狀態）、儲存（設定檔資料夾／iCloud Drive、密碼是否同步、簡訊／通知／通話記錄的收集開關與各自的保存天數、快取用量與上限、清除時機、清除快取、清除 Dock 副本）。
 
 ## Sources/PhoneCentre/Support
 
