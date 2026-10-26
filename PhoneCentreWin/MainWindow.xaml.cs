@@ -6,7 +6,8 @@ using PhoneCentre.Adb;
 using PhoneCentre.Mirror;
 using PhoneCentre.Support;
 using Windows.Graphics;
-using Windows.Media.Playback;
+using Microsoft.UI.Xaml.Media.Imaging;
+using System.Runtime.InteropServices.WindowsRuntime;
 
 namespace PhoneCentre;
 
@@ -14,7 +15,8 @@ namespace PhoneCentre;
 public sealed partial class MainWindow : Window
 {
     private ScrcpySession? _session;
-    private H264Feeder? _feeder;
+    private H264Decoder? _decoder;
+    private WriteableBitmap? _bitmap;
     private (int W, int H) _frame;
 
     public MainWindow()
@@ -27,7 +29,12 @@ public sealed partial class MainWindow : Window
         Surface.PointerPressed += (s, e) => OnPointer(e, ControlMessage.MotionAction.Down);
         Surface.PointerMoved += (s, e) => { if (_pressed) OnPointer(e, ControlMessage.MotionAction.Move); };
         Surface.PointerReleased += (s, e) => OnPointer(e, ControlMessage.MotionAction.Up);
-        Closed += (s, e) => _session?.Stop();
+        Closed += (s, e) =>
+        {
+            Microsoft.UI.Xaml.Media.CompositionTarget.Rendering -= OnRendering;
+            _session?.Stop();
+            _decoder?.Dispose();
+        };
 
         _ = StartAsync();
     }
@@ -52,11 +59,12 @@ public sealed partial class MainWindow : Window
             _session.FrameSizeChanged += (w, h) =>
             {
                 Log.Write($"畫面大小 {w}x{h}");
-                if (_feeder is null) AttachPlayer(w, h);
                 _frame = (w, h);
             };
-            _session.VideoConfig += p => _feeder?.Config(p);
-            _session.VideoFrame += (p, pts, key) => _feeder?.Frame(p, pts, key);
+            _decoder = new H264Decoder();
+            _session.VideoConfig += p => _decoder.Config(p);
+            _session.VideoFrame += (p, pts, key) => _decoder.Decode(p, key);
+            Microsoft.UI.Xaml.Media.CompositionTarget.Rendering += OnRendering;
             _session.Start();
         }
         catch (Exception e)
@@ -66,14 +74,21 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private void AttachPlayer(int w, int h)
+    /// <summary>每個畫面刷新取一次解碼器的最新幀，寫進 WriteableBitmap</summary>
+    private void OnRendering(object? sender, object e)
     {
-        _feeder = new H264Feeder(w, h);
-        var player = new MediaPlayer { RealTimePlayback = true, AutoPlay = true };
-        player.Source = Windows.Media.Core.MediaSource.CreateFromMediaStreamSource(_feeder.Source);
-        player.MediaFailed += (s, e) => Log.Write($"播放失敗 {e.Error} {e.ErrorMessage} {e.ExtendedErrorCode}");
-        player.MediaOpened += (s, e) => Log.Write("播放開始");
-        Player.SetMediaPlayer(player);
+        if (_decoder is null) return;
+        _decoder.TryTakeFrame((bgra, w, h) =>
+        {
+            if (_bitmap is null || _bitmap.PixelWidth != w || _bitmap.PixelHeight != h)
+            {
+                _bitmap = new WriteableBitmap(w, h);
+                Video.Source = _bitmap;
+            }
+            using var stream = _bitmap.PixelBuffer.AsStream();
+            stream.Write(bgra, 0, w * h * 4);
+            _bitmap.Invalidate();
+        });
     }
 
     private static async Task<Device?> FindDeviceAsync()

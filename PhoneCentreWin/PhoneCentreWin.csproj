@@ -26,6 +26,13 @@
     <EmbeddedResource Include="..\ThirdParty\scrcpy\scrcpy-server" LogicalName="scrcpy-server" />
     <EmbeddedResource Include="..\Resources\phonecentre-helper.jar" LogicalName="phonecentre-helper.jar" />
   </ItemGroup>
+  <!-- 精簡 FFmpeg（H.264 解碼＋swscale，LGPL）：依平台內嵌，建置方式見 scripts/build-ffmpeg.sh -->
+  <ItemGroup Condition="'$(Platform)'=='x64'">
+    <EmbeddedResource Include="Native\x64\*.dll" LogicalName="%(Filename)%(Extension)" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(Platform)'=='ARM64'">
+    <EmbeddedResource Include="Native\arm64\*.dll" LogicalName="%(Filename)%(Extension)" />
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.*" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.*" />

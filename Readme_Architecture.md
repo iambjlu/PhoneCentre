@@ -297,6 +297,7 @@ generic password 的讀寫（service `com.iambjlu.PhoneCentre`）。
 
 - 打包：unpackaged（`WindowsPackageType=None`）＋ self-contained（`WindowsAppSDKSelfContained`、`SelfContained`）＋ `PublishSingleFile`，產出單一 `PhoneCentre.exe`（約 85 MB，免安裝、雙擊即用）。Windows App SDK 的單檔發行需要 `EnableMsixTooling=true`。目標平台 x64（Intel）與 ARM64。
 - 視窗背景用 `MicaBackdrop`，不做 Liquid Glass。
+- Windows 防火牆第一次執行 adb.exe 會詢問是否允許存取網路；沒回應會被自動建立阻擋規則，之後每次都會再問。
 - 開發環境：ARM 版 Windows 機台上用 `dotnet publish -r win-x64 -p:Platform=x64` 交叉編譯，Intel 機台只負責驗證。
 
 ### Adb/
@@ -311,10 +312,12 @@ generic password 的讀寫（service `com.iambjlu.PhoneCentre`）。
 - `MirrorConfig.cs`：畫質選項與鏡像參數，預設值同 Mac 版（60 fps、8 Mbps、最大 1920）。
 - `ScrcpySession.cs`：對應 `ScrcpySession.swift`，推送 server、`shell:` 啟動（app_process 參數壓在 240 字元內）、依序連 video → audio → control、讀影像／音訊封包迴圈、剪貼簿與控制事件。解碼與播放不在這裡，透過 `VideoConfig`／`VideoFrame`／`AudioPacket` 事件（背景執行緒）交給外部；`StateChanged`／`FrameSizeChanged`／`DeviceClipboard` 回到建立者的 `SynchronizationContext`（UI 執行緒）。
 
-- `H264Feeder.cs`：把 `VideoConfig`／`VideoFrame` 的 Annex B 封包餵給 `MediaStreamSource`（系統的 H.264 解碼，通常是硬體）。必須從關鍵幀開始，關鍵幀前補上 SPS/PPS；佇列最多 4 個，超過就丟舊的以維持低延遲；`MediaPlayer.RealTimePlayback = true`。目前不用 FFmpeg（共享庫太大、x64／ARM64 要兩套原生 DLL），延遲不夠低再改 Media Foundation 解碼器直接配 D3D 渲染。
+- `H264Decoder.cs`：用 FFmpeg（libavcodec）軟體解碼 H.264 Annex B 封包，經 swscale 轉成 BGRA，與 scrcpy 自己的做法一致。關鍵幀前補 SPS/PPS，必須從關鍵幀開始；`low_delay`＋slice 執行緒（frame 執行緒會多出幾幀延遲）。雙緩衝，UI 每個畫面刷新用 `TryTakeFrame` 取最新一幀（不排隊，永遠只顯示最新的）。不用系統內建的 Media Foundation 解碼（`MediaStreamSource`）：同一份程式在 ARM64 有輸出，x64（Intel 真機與 ARM 機台模擬）卻吞了封包一幀都不吐，又沒有錯誤訊息可查。
+- `FFmpegNative.cs`：FFmpeg 的 P/Invoke（只用函式，不用 AutoGen；`AVFrame`／`AVPacket` 只讀開頭那段穩定 ABI 的欄位：frame 的 data@0、linesize@64、width@104、height@108、format@116，packet 的 data@24）。DLL 依平台內嵌，第一次使用時解到 `%LOCALAPPDATA%\PhoneCentre\assets`，依 avutil → swscale → avcodec 順序載入。
+- `Native/x64`、`Native/arm64`：精簡版 FFmpeg 7.1.1（只含 h264 解碼器與 parser、swscale，LGPL 共享庫；x64 約 4 MB、ARM64 約 2.8 MB，只依賴系統的 UCRT）。由 `scripts/build-ffmpeg.sh` 在 Mac 上用 llvm-mingw 交叉編譯（x64 需要 nasm 才有 SIMD 最佳化）。`--enable-parser=hevc` 是為了讓 `aom_film_grain.o` 被編進去：FFmpeg 只開 h264 時 `h2645_sei.o` 缺這個符號，連結會失敗。
 
 ### MainWindow（暫時版）
-啟動後連第一台在線裝置並鏡像（`MediaPlayerElement` 顯示，上面蓋一層透明 `Border` 收滑鼠：左鍵＝觸控、右鍵＝返回、中鍵＝主畫面，視窗座標以 Uniform 置中縮放換算成手機座標）。adb server 連不上時先 `start-server` 再試一次。正式 UI 之後取代。
+啟動後連第一台在線裝置並鏡像（`Image` ＋ `WriteableBitmap` 顯示，由 `CompositionTarget.Rendering` 取解碼器最新幀；上面蓋一層透明 `Border` 收滑鼠：左鍵＝觸控、右鍵＝返回、中鍵＝主畫面，視窗座標以 Uniform 置中縮放換算成手機座標）。adb server 連不上時先 `start-server` 再試一次。正式 UI 之後取代。
 
 ### Support/ 與 Settings/
 - `Log.cs`：除錯記錄檔 `%LOCALAPPDATA%\PhoneCentre\log.txt`。
