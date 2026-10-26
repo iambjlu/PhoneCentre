@@ -63,16 +63,35 @@ final class ThumbnailLoader: ObservableObject {
     }
 }
 
+/// 相機膠卷的篩選：全部／只看照片／只看影片
+enum MediaFilter: String, CaseIterable, Identifiable {
+    case all = "全部", photos = "照片", videos = "影片"
+    var id: String { rawValue }
+    func matches(_ f: RemoteFile) -> Bool {
+        switch self {
+        case .all: return true
+        case .photos: return !f.isVideo
+        case .videos: return f.isVideo
+        }
+    }
+}
+
 /// Apple「照片」風格的相機膠卷
 struct CameraRollView: View {
+    /// 「所有照片」：DCIM 底下所有資料夾（含子資料夾）的照片與影片
+    static let allPhotos = "@all"
+
     let device: Device
     private var fs: RemoteFS { RemoteFS(device: device) }
 
     @StateObject private var thumbs: ThumbnailLoader
     @State private var albums: [String] = []
-    @State private var album = "/sdcard/DCIM/Camera"
-    @State private var items: [RemoteFile] = []
+    @State private var album = CameraRollView.allPhotos
+    @State private var allItems: [RemoteFile] = []
+    @State private var filter: MediaFilter = .all
     @State private var selection = Set<String>()
+    /// ⇧ 範圍選取的起點（上一次點選的項目）
+    @State private var anchor: String?
     @State private var loading = false
     @State private var zoom: Double = 140
     @State private var viewing: RemoteFile?
@@ -91,13 +110,19 @@ struct CameraRollView: View {
                     ForEach(albums, id: \.self) { a in Text(albumTitle(a)).tag(a) }
                 }
                 .fixedSize()
+                Picker("", selection: $filter) {
+                    ForEach(MediaFilter.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented).labelsHidden().fixedSize()
                 Text("\(items.count) 個項目").foregroundStyle(.secondary).font(.callout)
                 Spacer()
                 if !selection.isEmpty {
                     Text("已選取 \(selection.count) 個").font(.callout).foregroundStyle(.secondary)
-                    Button("匯出…") { export() }
+                    Button("匯出…") { export() }.keyboardShortcut("e", modifiers: .command)
                     Button("刪除", role: .destructive) { delete() }
                 }
+                // ⌘A 全選（目前篩選後看得到的項目）
+                Button("") { selection = Set(items.map(\.id)) }.keyboardShortcut("a", modifiers: .command).opacity(0).frame(width: 0).accessibilityHidden(true)
                 Image(systemName: "minus.magnifyingglass").foregroundStyle(.secondary)
                 Slider(value: $zoom, in: 80...280).frame(width: 120)
                 Image(systemName: "plus.magnifyingglass").foregroundStyle(.secondary)
@@ -113,6 +138,7 @@ struct CameraRollView: View {
         }
         .task { await loadAlbums() }
         .task(id: album) { await load() }
+        .onChange(of: filter) { _, _ in selection = selection.filter { id in items.contains { $0.id == id } } }
         .sheet(item: $viewing) { f in MediaViewer(device: device, items: items.filter { !$0.isDir }, current: f) }
     }
 
@@ -127,7 +153,7 @@ struct CameraRollView: View {
         }
         .overlay {
             if loading { ProgressView() }
-            else if items.isEmpty { Text("這個相簿沒有照片或影片").foregroundStyle(.tertiary) }
+            else if items.isEmpty { Text(filter == .all ? "這個相簿沒有照片或影片" : "這個相簿沒有\(filter.rawValue)").foregroundStyle(.tertiary) }
         }
         .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
             loadURLs(providers) { urls in importFiles(urls) }
@@ -164,14 +190,7 @@ struct CameraRollView: View {
             .onAppear { thumbs.appear(f) }
             .onDisappear { thumbs.disappear(f) }
             .onTapGesture(count: 2) { viewing = f }
-            .onTapGesture {
-                let mods = NSEvent.modifierFlags
-                if mods.contains(.command) || mods.contains(.shift) {
-                    if selected { selection.remove(f.id) } else { selection.insert(f.id) }
-                } else {
-                    selection = [f.id]
-                }
-            }
+            .onTapGesture { click(f) }
             .onDrag { remoteFileItemProvider(f, device: device) }
             .contextMenu {
                 Button("打開") { viewing = f }
@@ -180,9 +199,30 @@ struct CameraRollView: View {
             }
     }
 
+    /// 跟 Finder／照片一樣：⌘ 點選加入或取消、⇧ 點選選取從上一次點的到這一個之間的範圍、一般點選只選這一個
+    private func click(_ f: RemoteFile) {
+        let mods = NSEvent.modifierFlags
+        if mods.contains(.shift), let a = anchor, let i = items.firstIndex(where: { $0.id == a }),
+           let j = items.firstIndex(where: { $0.id == f.id }) {
+            let range = items[min(i, j)...max(i, j)].map(\.id)
+            if mods.contains(.command) { selection.formUnion(range) } else { selection = Set(range) }
+            return
+        }
+        if mods.contains(.command) || mods.contains(.shift) {
+            if selection.contains(f.id) { selection.remove(f.id) } else { selection.insert(f.id) }
+        } else {
+            selection = [f.id]
+        }
+        anchor = f.id
+    }
+
+    /// 目前篩選後顯示的項目
+    private var items: [RemoteFile] { allItems.filter(filter.matches) }
+
     private func albumTitle(_ path: String) -> String {
         let name = (path as NSString).lastPathComponent
         switch path {
+        case Self.allPhotos: return "所有照片"
         case "/sdcard/DCIM/Camera": return "相機"
         case "/sdcard/DCIM/Screenshots", "/sdcard/Pictures/Screenshots": return "截圖"
         default: return name
@@ -190,7 +230,7 @@ struct CameraRollView: View {
     }
 
     private func loadAlbums() async {
-        var list = ["/sdcard/DCIM/Camera"]
+        var list = [Self.allPhotos, "/sdcard/DCIM/Camera"]
         let dcim = (try? await fs.list("/sdcard/DCIM", showHidden: false)) ?? []
         list += dcim.filter { $0.isDir && $0.path != "/sdcard/DCIM/Camera" }.map(\.path)
         let pics = (try? await fs.list("/sdcard/Pictures", showHidden: false)) ?? []
@@ -201,8 +241,11 @@ struct CameraRollView: View {
     private func load() async {
         loading = true
         selection = []
-        let list = (try? await fs.list(album, showHidden: false)) ?? []
-        items = list.filter(\.isMedia).sorted { $0.modified > $1.modified }
+        anchor = nil
+        let list = album == Self.allPhotos
+            ? ((try? await fs.listRecursive("/sdcard/DCIM")) ?? [])
+            : ((try? await fs.list(album, showHidden: false)) ?? [])
+        allItems = list.filter(\.isMedia).sorted { $0.modified > $1.modified }
         loading = false
     }
 
@@ -216,12 +259,25 @@ struct CameraRollView: View {
         panel.directoryURL = FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first
         guard panel.runModal() == .OK, let dir = panel.url else { return }
         Task {
+            var used = Set<String>()
             for (i, f) in sel.enumerated() {
                 status = "匯出中 (\(i + 1)/\(sel.count))：\(f.name)"
-                try? await device.client.pull(f.path, to: dir.appendingPathComponent(f.name))
+                // 「所有照片」可能有不同資料夾的同名檔案：名稱重複就加上編號，不互相覆蓋
+                try? await device.client.pull(f.path, to: uniqueURL(dir, f.name, used: &used))
             }
             status = "已匯出 \(sel.count) 個項目到 \(dir.lastPathComponent)"
         }
+    }
+
+    private func uniqueURL(_ dir: URL, _ name: String, used: inout Set<String>) -> URL {
+        let base = (name as NSString).deletingPathExtension, ext = (name as NSString).pathExtension
+        var candidate = name, n = 2
+        while used.contains(candidate) || FileManager.default.fileExists(atPath: dir.appendingPathComponent(candidate).path) {
+            candidate = ext.isEmpty ? "\(base) \(n)" : "\(base) \(n).\(ext)"
+            n += 1
+        }
+        used.insert(candidate)
+        return dir.appendingPathComponent(candidate)
     }
 
     private func delete() {
@@ -244,7 +300,9 @@ struct CameraRollView: View {
         Task {
             for (i, u) in urls.enumerated() {
                 status = "匯入中 (\(i + 1)/\(urls.count))：\(u.lastPathComponent)"
-                try? await device.client.push(u, to: album + "/" + u.lastPathComponent)
+                // 「所有照片」不是實際的資料夾，匯入到相機資料夾
+                let target = album == Self.allPhotos ? "/sdcard/DCIM/Camera" : album
+                try? await device.client.push(u, to: target + "/" + u.lastPathComponent)
             }
             status = "已匯入 \(urls.count) 個項目"
             await load()

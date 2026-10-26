@@ -54,7 +54,7 @@ struct DeviceStatus: Equatable {
     static let script = """
     echo '@@bat'; dumpsys battery | grep -E '^  (level|status|AC powered|USB powered|Wireless powered):'
     echo '@@net'; dumpsys connectivity | grep -E 'Active default network|NetworkAgentInfo\\{network\\{' | cut -c1-150
-    echo '@@tel'; dumpsys telephony.registry | grep -E '^  Phone Id=|^    (mServiceState|mSignalStrength|mDataConnectionState|mCellInfo)=' | cut -c1-2000
+    echo '@@tel'; dumpsys telephony.registry | grep -E '^  Phone Id=|^    (mServiceState|mSignalStrength|mDataConnectionState|mCellInfo|mCellIdentity)=' | cut -c1-2000
     echo '@@sim'; getprop gsm.sim.state
     echo '@@wifi'; dumpsys wifi | grep -m1 -oE 'RSSI: -?[0-9]+'
     echo '@@wifiinfo'; dumpsys wifi | grep -m1 'mWifiInfo SSID' | cut -c1-200
@@ -173,9 +173,23 @@ struct DeviceStatus: Equatable {
                 if !name.isEmpty, name != "Unknown" { p.tech = name.hasPrefix("NR") ? "5G" : name; break }
             }
         }
-        if let cell = lines.first(where: { $0.contains("mCellInfo=") }),
-           let reg = cell.range(of: "mRegistered=YES"), let a = cell[reg.upperBound...].range(of: "mAlphaLong=") {
-            p.carrier = String(cell[a.upperBound...].prefix { $0 != " " && $0 != "}" })
+        // 已註冊的基地台可能不只一個，其中有的是無效資料（例如三星雙卡時的 WCDMA「mMcc=000 mAlphaLong=000000」），
+        // 名稱是空的或全是數字就跳過；都沒有就退回目前服務基地台（mCellIdentity）的名稱
+        func alpha(in s: Substring) -> String? {
+            guard let a = s.range(of: "mAlphaLong=") else { return nil }
+            let name = String(s[a.upperBound...].prefix { $0 != " " && $0 != "}" })
+            return name.isEmpty || name.allSatisfy(\.isNumber) ? nil : name
+        }
+        if let cell = lines.first(where: { $0.contains("mCellInfo=") }) {
+            var rest = cell[...]
+            while p.carrier.isEmpty, let reg = rest.range(of: "mRegistered=YES") {
+                rest = rest[reg.upperBound...]
+                let end = rest.range(of: "mRegistered=")?.lowerBound ?? rest.endIndex
+                if let name = alpha(in: rest[..<end]) { p.carrier = name }
+            }
+        }
+        if p.carrier.isEmpty, let id = lines.first(where: { $0.contains("mCellIdentity=") }), let name = alpha(in: id[...]) {
+            p.carrier = name
         }
         if let sig = lines.first(where: { $0.contains("mSignalStrength=") }) {
             for key in ["rsrp=", "ssRsrp=", "rssi="] {

@@ -148,7 +148,12 @@ final class AppCatalog: ObservableObject {
     /// 解析 dumpsys activity recents：每個「Recent #N」區塊找 realActivity／cmp=，
     /// 找不到時用 affinity（A=uid:affinity）對已安裝套件做前綴比對（例如 com.android.settings.root）。
     nonisolated static func parseRecents(_ text: String, installed: Set<String>) -> [String] {
-        var result: [String] = []
+        parseRecentTasks(text, installed: installed).map(\.pkg)
+    }
+
+    /// 同上，另外附上每個區塊的 task id（「Task{… #434 …}」）
+    nonisolated static func parseRecentTasks(_ text: String, installed: Set<String>) -> [(pkg: String, task: Int?)] {
+        var result: [(pkg: String, task: Int?)] = []
         var blocks: [[Substring]] = []
         var inBlock = false
         for line in text.split(separator: "\n") {
@@ -180,7 +185,11 @@ final class AppCatalog: ObservableObject {
                     comps.removeLast()
                 }
             }
-            if let pkg { result.append(pkg) }
+            var task: Int?
+            if let r = header.range(of: #" #\d+ "#, options: .regularExpression) {
+                task = Int(header[r].trimmingCharacters(in: .whitespaces).dropFirst())
+            }
+            if let pkg { result.append((pkg, task)) }
         }
         return result
     }
@@ -200,8 +209,19 @@ final class AppCatalog: ObservableObject {
         }
     }
 
+    /// 強制停止，並把它在最近使用裡的 task 一起移除（跟手動滑掉一樣）。
+    /// 常駐程序（例如 com.android.phone）force-stop 不會結束，task 也不會消失，所以一定要移除 task
     func forceStop(_ pkg: String) async {
         _ = try? await device.client.shell("am force-stop \(pkg)")
+        let recents = (try? await device.client.shell("dumpsys activity recents")) ?? ""
+        let ids = Self.parseRecentTasks(recents, installed: installed).filter { $0.pkg == pkg }.compactMap(\.task)
+        if !ids.isEmpty {
+            let out = (try? await helper(["removetasks"] + ids.map(String.init), timeout: 20)) ?? ""
+            // 輔助程式失敗時退回 am stack remove（只對還在畫面階層裡的 task 有效）
+            if !out.contains("\t1") {
+                _ = try? await device.client.shell(ids.map { "am stack remove \($0)" }.joined(separator: "; "))
+            }
+        }
         await refreshTasks()
     }
 

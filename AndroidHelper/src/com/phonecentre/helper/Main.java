@@ -40,6 +40,9 @@ import java.util.Set;
  *   list                 每行輸出「package \t label \t isSystem(0/1)」，只列出有啟動器入口的 App
  *   icons <px> <pkg...>  每行輸出「package \t base64(PNG)」
  *   thumbs <px> <path...> 每行輸出「path \t base64(JPEG)」，在手機端產生縮圖，只傳小圖
+ *   removetasks <id...>  從最近使用移除 task（跟手動滑掉一樣；常駐程序的 App 用 force-stop 清不掉）
+ *   tobg <prev> <id...>  把 root task 搬到主螢幕，同一個程序內立刻把 prev（主螢幕原本最上層的 task，-1 = 不處理）
+ *                        拉回最上層：兩個動作間隔不到 1ms，App 不會在主螢幕上閃一下
  */
 public final class Main {
 
@@ -70,6 +73,12 @@ public final class Main {
                 case "thumbs":
                     int tpx = Integer.parseInt(args[1]);
                     for (int i = 2; i < args.length; i++) thumb(args[i], tpx);
+                    break;
+                case "removetasks":
+                    for (int i = 1; i < args.length; i++) out.println(args[i] + "\t" + (removeTask(Integer.parseInt(args[i])) ? 1 : 0));
+                    break;
+                case "tobg":
+                    toBackground(args);
                     break;
                 default:
                     System.err.println("unknown command " + args[0]);
@@ -290,5 +299,53 @@ public final class Main {
         Configuration conf = new Configuration();
         conf.setLocale(Locale.getDefault());
         return new Resources(am, dm, conf);
+    }
+
+    // ---- task 操作（IActivityTaskManager，Android 9 以前在 IActivityManager）----
+
+    private static Object taskService() throws Exception {
+        try {
+            return Class.forName("android.app.ActivityTaskManager").getMethod("getService").invoke(null);
+        } catch (ClassNotFoundException e) {
+            return Class.forName("android.app.ActivityManager").getMethod("getService").invoke(null);
+        }
+    }
+
+    private static Method find(Object svc, String... names) {
+        for (String n : names)
+            for (Method m : svc.getClass().getMethods())
+                if (m.getName().equals(n)) return m;
+        return null;
+    }
+
+    private static boolean removeTask(int id) {
+        try {
+            Object svc = taskService();
+            Method m = find(svc, "removeTask");
+            if (m == null) return false;
+            Object r = m.invoke(svc, id);
+            return !(r instanceof Boolean) || (Boolean) r;
+        } catch (Throwable t) {
+            t.printStackTrace();
+            return false;
+        }
+    }
+
+    private static void toBackground(String[] args) throws Exception {
+        Object svc = taskService();
+        Method move = find(svc, "moveRootTaskToDisplay", "moveStackToDisplay");
+        Method front = find(svc, "moveTaskToFront");
+        if (move == null) throw new IllegalStateException("no moveRootTaskToDisplay");
+        int prev = Integer.parseInt(args[1]);
+        for (int i = 2; i < args.length; i++) {
+            try { move.invoke(svc, Integer.parseInt(args[i]), 0); } catch (Throwable t) { t.printStackTrace(); }
+        }
+        if (prev >= 0 && front != null) {
+            Class<?>[] p = front.getParameterTypes();
+            // Android 10+：(IApplicationThread, callingPackage, taskId, flags, Bundle)；Android 9：(taskId, flags, Bundle)
+            if (p.length == 5) front.invoke(svc, null, "com.android.shell", prev, 0, null);
+            else if (p.length == 3) front.invoke(svc, prev, 0, null);
+        }
+        out.println("ok");
     }
 }

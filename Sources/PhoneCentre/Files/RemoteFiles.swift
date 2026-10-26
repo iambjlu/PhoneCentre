@@ -42,6 +42,21 @@ struct RemoteFS {
         }
     }
 
+    /// 資料夾底下所有檔案（含子資料夾，略過隱藏檔與隱藏資料夾，例如 .thumbnails）
+    func listRecursive(_ dir: String) async throws -> [RemoteFile] {
+        let out = try await client.shell(
+            "cd \(Shell.quote(dir)) 2>&1 || exit 1; find . -type f ! -path '*/.*' -exec stat -L -c '%F|%s|%Y|%n' {} + 2>/dev/null", timeout: 120)
+        if out.contains("can't cd") || out.contains("No such file") { throw AdbError.failed(out.trimmingCharacters(in: .whitespacesAndNewlines)) }
+        let base = dir.hasSuffix("/") ? String(dir.dropLast()) : dir
+        return out.split(separator: "\n").compactMap { line in
+            let p = line.split(separator: "|", maxSplits: 3, omittingEmptySubsequences: false).map(String.init)
+            guard p.count == 4, p[3].hasPrefix("./") else { return nil }
+            let rel = String(p[3].dropFirst(2))
+            return RemoteFile(path: base + "/" + rel, name: (rel as NSString).lastPathComponent, isDir: false,
+                              size: Int64(p[1]) ?? 0, modified: Date(timeIntervalSince1970: TimeInterval(p[2]) ?? 0))
+        }
+    }
+
     func mkdir(_ path: String) async throws {
         try check(await client.shell("mkdir -p \(Shell.quote(path)) 2>&1"))
     }

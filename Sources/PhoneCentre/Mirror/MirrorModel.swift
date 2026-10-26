@@ -325,26 +325,38 @@ final class MirrorModel: ObservableObject {
         }
     }
 
-    /// 關閉虛擬顯示器視窗前：把顯示器上的 App 搬到主螢幕後立刻把主螢幕原本的畫面拉回最上層，
-    /// App 就留在背景，不會突然跳到主螢幕上。
+    /// 關閉虛擬顯示器視窗前：把顯示器上的 App 送到主螢幕的背景。
+    /// 由手機端輔助程式（`tobg`）在同一個程序裡搬移後立刻把主螢幕原本最上層的 task 拉回來，
+    /// 兩個動作間隔不到 1ms，App 不會先在主螢幕上出現；輔助程式失敗才退回 `am` 指令。
     func sendAppsToBackground() async {
         guard isVirtualDisplay, let d = displayId else { return }
         let tasks = await rootTasks(onDisplay: d)
         guard !tasks.isEmpty else { return }
-        let out = (try? await device.client.shell("dumpsys activity activities | grep -E 'Display #|mResumedActivity'")) ?? ""
+        let out = (try? await device.client.shell("dumpsys activity activities | grep -E 'Display #|mResumedActivity|taskId='")) ?? ""
         var inMain = false
         var prev: String?
+        var prevTask: Int?
         for line in out.split(separator: "\n") {
             if line.contains("Display #") { inMain = line.contains("Display #0 "); continue }
-            if inMain, prev == nil, let r = line.range(of: " u0 ") {
+            guard inMain else { continue }
+            if prevTask == nil, line.trimmingCharacters(in: .whitespaces).hasPrefix("taskId=") {
+                prevTask = Self.firstInt(in: line, after: "taskId=")
+            }
+            if prev == nil, line.contains("mResumedActivity"), let r = line.range(of: " u0 ") {
                 prev = line[r.upperBound...].prefix { $0 != " " && $0 != "}" }.description
             }
         }
-        var script = tasks.map { "am display move-stack \($0) 0" }.joined(separator: "; ")
-        if let prev, !prev.isEmpty { script += "; am start -n \(prev) --activity-reorder-to-front" }
+        let moved = (try? await HelperTool.shared.run(device, ["tobg", String(prevTask ?? -1)] + tasks.map(String.init), timeout: 10)) ?? ""
+        var script: String
+        if moved.contains("ok") {
+            script = prevTask == nil && prev != nil ? "am start -n \(prev!) --activity-reorder-to-front" : ""
+        } else {
+            script = tasks.map { "am display move-stack \($0) 0" }.joined(separator: "; ")
+            if let prev, !prev.isEmpty { script += "; am start -n \(prev) --activity-reorder-to-front" }
+        }
         // App 回到背景後把它的程序收掉：下次在主螢幕打開時才會依主螢幕的密度重新繪製（不然會變超小）
-        if let app = appPackage { script += "; am kill \(app)" }
-        _ = try? await device.client.shell(script, timeout: 10)
+        if let app = appPackage { script += (script.isEmpty ? "" : "; ") + "am kill \(app)" }
+        if !script.isEmpty { _ = try? await device.client.shell(script, timeout: 10) }
     }
 
     /// 依大小與認領狀態找出這個視窗的虛擬顯示器（取 id 最大 = 最新建立的）
@@ -613,11 +625,17 @@ final class MirrorModel: ObservableObject {
     /// 強制停止 App 並關閉視窗
     func forceStopAndClose() {
         guard let pkg = appPackage else { return }
-        let c = device.client
         Task {
-            _ = try? await c.shell("am force-stop \(pkg)")
+            await catalog.forceStop(pkg)
             closeWindow()
         }
+    }
+
+    /// 結束程式（⌘Q）前：獨立 App 視窗跟導覽列的「結束」一樣強制停止 App；桌面模式把 App 送到背景。
+    /// 不處理的話虛擬顯示器一關，App 會被系統搬回手機主螢幕
+    func prepareForQuit() async {
+        if let pkg = appPackage { await catalog.forceStop(pkg) }
+        else if desktopMode { await sendAppsToBackground() }
     }
 
     private func inputKey(_ code: Int32, display: Int) {
