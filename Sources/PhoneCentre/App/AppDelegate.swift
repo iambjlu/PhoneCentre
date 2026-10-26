@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var mainWindow: NSWindow?
     private var settingsWindow: NSWindow?
     private var menuBar: MenuBarController?
@@ -88,6 +88,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             blur.frame = w.contentView?.superview?.bounds ?? .zero
             blur.autoresizingMask = [.width, .height]
             w.contentView?.superview?.addSubview(blur, positioned: .below, relativeTo: w.contentView)
+            w.delegate = self
             w.setFrameAutosaveName("MainWindow")
             if !w.setFrameUsingName("MainWindow") { w.center() }
             // 記住的大小比最小值還小（舊版存下來的）就放大，左上角不動
@@ -97,7 +98,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 w.setFrame(NSRect(x: f.minX, y: f.maxY - size.height, width: size.width, height: size.height), display: false)
             }
             NotificationCenter.default.addObserver(forName: NSWindow.didResizeNotification, object: w, queue: .main) { [weak w] _ in
-                MainActor.assumeIsolated { if let w { Self.lockSidebar(in: w) } }
+                MainActor.assumeIsolated {
+                    guard let w else { return }
+                    // 拖曳邊框時由 windowWillResize 擋住；這裡只處理程式或其他工具直接設定的大小
+                    if !w.inLiveResize { Self.clampMainWindow(w) }
+                    Self.lockSidebar(in: w)
+                }
             }
             mainWindow = w
         }
@@ -112,6 +118,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     static let mainMinSize = NSSize(width: 1020, height: 830)
+
+    /// 拖曳主視窗邊框（任何一角）：到最小值就停住、不再縮小，視窗不會跑掉。
+    /// SwiftUI 的 NavigationSplitView 會自己改寫視窗的最小大小，只設 minSize 擋不住
+    func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
+        guard sender === mainWindow else { return frameSize }
+        return NSSize(width: max(frameSize.width, Self.mainMinSize.width), height: max(frameSize.height, Self.mainMinSize.height))
+    }
+
+    /// `minSize` 只限制使用者拖邊框；程式、視窗管理工具或輔助使用 API 直接設定大小時會繞過，所以縮放後再夾回最小值（左上角不動）
+    static func clampMainWindow(_ w: NSWindow) {
+        let f = w.frame
+        guard f.width < mainMinSize.width - 0.5 || f.height < mainMinSize.height - 0.5 else { return }
+        let size = NSSize(width: max(f.width, mainMinSize.width), height: max(f.height, mainMinSize.height))
+        w.setFrame(NSRect(x: f.minX, y: f.maxY - size.height, width: size.width, height: size.height), display: true)
+    }
     static let sidebarWidth: CGFloat = 236
 
     /// 側邊欄寬度鎖死：直接設定 NavigationSplitView 底層的 NSSplitViewItem（最小＝最大＝236、不能收合）。
