@@ -19,3 +19,8 @@ PhoneCentre **不內含** adb。若系統找不到 adb，PhoneCentre 會在用�
 `~/Library/Application Support/PhoneCentre/platform-tools`。
 Platform-Tools 受 Android Software Development Kit License Agreement 約束：
 https://developer.android.com/studio/terms
+
+## 手機端輔助程式
+
+`phonecentre-helper.jar` 由本專案自行撰寫。其中「關閉手機面板但保持開機」（`SurfaceControl.setDisplayPowerMode`、
+Android 14+ 透過 `DisplayControl` 取得實體顯示器）與「注入觸控事件」的做法參考 scrcpy 公開的實作方式，以 Java 重新撰寫。
