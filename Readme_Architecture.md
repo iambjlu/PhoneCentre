@@ -291,6 +291,31 @@ generic password 的讀寫（service `com.iambjlu.PhoneCentre`）。
 - 清除時機：裝置斷線立即清除該裝置的快取／幾天沒連線才清除（記錄在 `last-seen.json`）／只依容量。
 - 容量上限：依最後存取時間（LRU）刪到上限的 90%；每分鐘檢查一次。
 
+## PhoneCentreWin（Windows 版，WinUI 3）
+
+`PhoneCentreWin/` 是同一個專案的 Windows 版（C# / .NET 10 / Windows App SDK 1.8），不影響 Mac 版的建置。手機端（scrcpy-server、`phonecentre-helper.jar`）原封不動沿用，兩個檔案以 `EmbeddedResource` 內嵌（來源 `ThirdParty/scrcpy/scrcpy-server`、`Resources/phonecentre-helper.jar`），執行時由 `Assets.Extract` 解到 `%LOCALAPPDATA%\PhoneCentre\assets` 再 adb push。
+
+- 打包：unpackaged（`WindowsPackageType=None`）＋ self-contained（`WindowsAppSDKSelfContained`、`SelfContained`）＋ `PublishSingleFile`，產出單一 `PhoneCentre.exe`（約 85 MB，免安裝、雙擊即用）。Windows App SDK 的單檔發行需要 `EnableMsixTooling=true`。目標平台 x64（Intel）與 ARM64。
+- 視窗背景用 `MicaBackdrop`，不做 Liquid Glass。
+- 開發環境：ARM 版 Windows 機台上用 `dotnet publish -r win-x64 -p:Platform=x64` 交叉編譯，Intel 機台只負責驗證。
+
+### Adb/
+- `AdbSocket.cs`：對應 `AdbSocket.swift`，`AdbEndpoint`／`AdbException`／阻塞式 socket（`Socket` + 收發逾時），adb server 協定的 `SendRequest`、`HostQuery`、`Open`。
+- `AdbClient.cs`：對應 `AdbClient.swift`，短指令走 `exec:`，push／pull／install／pair／mdns 走 adb.exe（遠端端點加 `-H -P`）。
+- `Device.cs`：`Device` 與 `DeviceInfo`（解析 `host:devices-l`、一次抓取的裝置資訊）。
+- `AdbLocator.cs`：找 adb.exe（自訂路徑 → `%LOCALAPPDATA%\PhoneCentre\platform-tools` → ANDROID_HOME → Android SDK → PATH，每個候選先試跑 `adb version`）；找不到時從 Google 下載 Windows 版 platform-tools 並解壓。
+- `HelperTool.cs`：推送並執行手機端輔助程式。
+
+### Mirror/
+- `ControlMessage.cs`：scrcpy 3.3.4 控制協定編碼，與 Swift 版逐位元組比對過（16 種訊息完全一致）。
+- `MirrorConfig.cs`：畫質選項與鏡像參數，預設值同 Mac 版（60 fps、8 Mbps、最大 1920）。
+- `ScrcpySession.cs`：對應 `ScrcpySession.swift`，推送 server、`shell:` 啟動（app_process 參數壓在 240 字元內）、依序連 video → audio → control、讀影像／音訊封包迴圈、剪貼簿與控制事件。解碼與播放不在這裡，透過 `VideoConfig`／`VideoFrame`／`AudioPacket` 事件（背景執行緒）交給外部；`StateChanged`／`FrameSizeChanged`／`DeviceClipboard` 回到建立者的 `SynchronizationContext`（UI 執行緒）。
+
+### Support/ 與 Settings/
+- `Shell.cs`：非同步執行外部程式（stdout／stderr 邊跑邊讀、逾時強制結束）與單引號跳脫。
+- `Assets.cs`：內嵌資源解出。
+- `AppSettings.cs`：目前只有自訂 adb 路徑，之後換成完整設定。
+
 ## 已知限制
 
 - 桌面模式的主畫面與多工把按鍵送到該虛擬顯示器（`input -d`），是否有桌面或最近使用畫面依手機系統而定。

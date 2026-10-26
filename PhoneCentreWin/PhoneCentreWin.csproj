@@ -23,6 +23,10 @@
     <DebugType>embedded</DebugType>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="..\ThirdParty\scrcpy\scrcpy-server" LogicalName="scrcpy-server" />
+    <EmbeddedResource Include="..\Resources\phonecentre-helper.jar" LogicalName="phonecentre-helper.jar" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.*" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.*" />
   </ItemGroup>
