@@ -57,7 +57,7 @@ Sources/PhoneCentre/           Swift 原始碼（下面各章節；PhoneData 為
 - 一般模式：啟動 `CacheManager`、`DeviceManager`（輪詢與自動維持連線）、`DeviceStatusStore`（側邊欄與總覽的手機狀態）、`RemoteManager`、`ShareServer`、選單列，並開啟主視窗。關閉所有視窗後仍留在選單列（關掉選單列圖示時才會結束）。
 - 子程序模式（`ChildMode.isChild`）：只開一個鏡像／App 視窗，視窗關閉就結束。
 - 結束（⌘Q）：`applicationShouldTerminate` 先對開著的虛擬顯示器視窗呼叫 `MirrorModel.prepareForQuit`（獨立 App 視窗跟導覽列的「結束」一樣強制停止 App 並移除 task；桌面模式把 App 送到背景），做完（最多等 6 秒）才真的結束；不處理的話虛擬顯示器一關，App 會被系統搬回手機主螢幕。
-- 主視窗最小大小 1020×830：`NSHostingView.sizingOptions = []`（預設會依 SwiftUI 內容改寫視窗的最小大小，把 `minSize` 蓋掉），再設定 `minSize`／`contentMinSize`。但 NavigationSplitView 還是會改寫最小大小，所以拖曳邊框時由 `windowWillResize`（AppDelegate 是主視窗的 delegate）把建議大小限制在最小值：拖到最小就停住，對角固定、視窗不會跑掉；不是拖曳造成的縮小（程式、視窗管理工具、輔助使用 API 直接設定大小、從記住的大小還原）才由 `clampMainWindow` 以左上角為準放大回最小值。側邊欄寬度由 `lockSidebar` 直接鎖住 NavigationSplitView 底層的 `NSSplitViewItem`（最小＝最大＝236、不能收合，寬度不對就 `setPosition`），顯示時與每次視窗縮放時都會再鎖一次。
+- 主視窗最小大小 1020×830：`NSHostingView.sizingOptions = []`（預設會依 SwiftUI 內容改寫視窗的最小大小，把 `minSize` 蓋掉），再設定 `minSize`／`contentMinSize`。但 NavigationSplitView 還是會改寫最小大小，所以拖曳邊框時由 `windowWillResize`（AppDelegate 是主視窗的 delegate）把建議大小限制在最小值：拖到最小就停住，對角固定、視窗不會跑掉；不是拖曳造成的縮小（程式、視窗管理工具、輔助使用 API 直接設定大小、從記住的大小還原）才由 `clampMainWindow` 以左上角為準放大回最小值。側邊欄寬度由 `lockSidebar` 直接鎖住 NavigationSplitView 底層的 `NSSplitViewItem`（最小＝最大＝236、不能收合，寬度不對就 `setPosition`），顯示時與每次視窗縮放時都會再鎖一次。分隔線上另外蓋一層透明的 `DividerBlocker`（放在視窗的 theme frame 最上層，放進 NSSplitView 會被當成新的一欄）：接住滑鼠按下與拖曳、游標一律是箭頭，側邊欄完全不能拖動。
 - 建立主選單（只有 App 選單：設定 ⌘,、顯示PhoneCentre ⌘0、隱藏、結束；不放「編輯」「視窗」選單）。
 
 ### AppSettings.swift

@@ -1,0 +1,10 @@
+<Window x:Class="PhoneCentre.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Grid Padding="24">
+    <StackPanel Spacing="8" VerticalAlignment="Center" HorizontalAlignment="Center">
+      <TextBlock Text="PhoneCentre" FontSize="28" FontWeight="SemiBold"/>
+      <TextBlock x:Name="Info" Opacity="0.7"/>
+    </StackPanel>
+  </Grid>
+</Window>

@@ -149,10 +149,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     if item.isCollapsed { item.isCollapsed = false }
                 }
                 if abs(split.subviews[0].frame.width - sidebarWidth) > 0.5 { split.setPosition(sidebarWidth, ofDividerAt: 0) }
+                placeDividerBlocker(over: split, in: window)
                 return
             }
             stack.append(contentsOf: v.subviews)
         }
+    }
+
+    /// 分隔線上蓋一層透明擋板（放在視窗最上層的 theme frame，不能放進 NSSplitView，否則會被當成新的一欄）：
+    /// 滑鼠按下、拖曳都被它吃掉，游標維持箭頭，側邊欄完全不能拖動
+    private static func placeDividerBlocker(over split: NSSplitView, in window: NSWindow) {
+        guard let frameView = window.contentView?.superview else { return }
+        let x = split.convert(NSPoint(x: split.subviews[0].frame.maxX, y: 0), to: frameView).x
+        let r = NSRect(x: x - 5, y: 0, width: 10, height: frameView.bounds.height)
+        let blocker = frameView.subviews.first { $0 is DividerBlocker } ?? {
+            let b = DividerBlocker(frame: r)
+            b.autoresizingMask = [.height]
+            frameView.addSubview(b, positioned: .above, relativeTo: nil)
+            return b
+        }()
+        if blocker.frame != r { blocker.frame = r; window.invalidateCursorRects(for: blocker) }
     }
 
     @objc func showSettings() {
@@ -193,4 +209,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         NSApp.mainMenu = main
     }
+}
+
+/// 蓋在側邊欄分隔線上的透明擋板：接住滑鼠事件、不做任何事，游標一律是箭頭
+private final class DividerBlocker: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { frame.contains(point) ? self : nil }
+    override func mouseDown(with event: NSEvent) {}
+    override func mouseDragged(with event: NSEvent) {}
+    override func mouseUp(with event: NSEvent) {}
+    override func resetCursorRects() { addCursorRect(bounds, cursor: .arrow) }
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: bounds, options: [.cursorUpdate, .activeAlways, .inVisibleRect], owner: self))
+    }
+    override func cursorUpdate(with event: NSEvent) { NSCursor.arrow.set() }
 }
