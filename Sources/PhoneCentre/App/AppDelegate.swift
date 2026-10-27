@@ -148,8 +148,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     if item.canCollapse { item.canCollapse = false }
                     if item.isCollapsed { item.isCollapsed = false }
                 }
-                if abs(split.subviews[0].frame.width - sidebarWidth) > 0.5 { split.setPosition(sidebarWidth, ofDividerAt: 0) }
-                placeDividerBlocker(over: split, in: window)
+                // 新版系統的 subviews[0] 是延伸到側邊欄底下的全寬內容欄，要用分割項目的 view 才是真正的側邊欄
+                let sidebarView = (split.delegate as? NSSplitViewController)?.splitViewItems.first?.viewController.view ?? split.subviews[0]
+                if abs(sidebarView.frame.width - sidebarWidth) > 0.5 { split.setPosition(sidebarWidth, ofDividerAt: 0) }
+                placeDividerBlocker(over: split, sidebar: sidebarView, in: window)
                 return
             }
             stack.append(contentsOf: v.subviews)
@@ -158,10 +160,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     /// 分隔線上蓋一層透明擋板（放在視窗最上層的 theme frame，不能放進 NSSplitView，否則會被當成新的一欄）：
     /// 滑鼠按下、拖曳都被它吃掉，游標維持箭頭，側邊欄完全不能拖動
-    private static func placeDividerBlocker(over split: NSSplitView, in window: NSWindow) {
+    private static func placeDividerBlocker(over split: NSSplitView, sidebar: NSView, in window: NSWindow) {
         guard let frameView = window.contentView?.superview else { return }
-        let x = split.convert(NSPoint(x: split.subviews[0].frame.maxX, y: 0), to: frameView).x
-        let r = NSRect(x: x - 5, y: 0, width: 10, height: frameView.bounds.height)
+        let x = split.convert(NSPoint(x: sidebar.convert(sidebar.bounds, to: split).maxX, y: 0), to: frameView).x
+        let r = NSRect(x: x - 6, y: 0, width: 14, height: frameView.bounds.height)
         let blocker = frameView.subviews.first { $0 is DividerBlocker } ?? {
             let b = DividerBlocker(frame: r)
             b.autoresizingMask = [.height]
