@@ -42,6 +42,8 @@ struct DeviceStatus: Equatable {
     var batteryCycles: Int?
     var batteryMaxMah: Int?
     var batteryDesignMah: Int?
+    /// 目前充電功率（W），電壓 × 電流；只有充電中才有值
+    var chargingWatts: Double?
     var manufactureDate = ""       // yyyyMMdd（三星的 RF 校正日期，約等於出廠日）
 
     var summary: String {
@@ -60,7 +62,7 @@ struct DeviceStatus: Equatable {
     echo '@@wifi'; dumpsys wifi | grep -m1 -oE 'RSSI: -?[0-9]+'
     echo '@@wifiinfo'; dumpsys wifi | grep -m1 'mWifiInfo SSID' | cut -c1-200
     echo '@@ip'; ip -f inet addr show wlan0 2>/dev/null | grep -m1 inet
-    echo '@@sys'; for f in cycle_count battery_cycle fg_cycle charge_full_design fg_fullcapnom charge_full; do echo "$f=$(cat /sys/class/power_supply/battery/$f 2>/dev/null)"; done
+    echo '@@sys'; for f in cycle_count battery_cycle fg_cycle charge_full_design fg_fullcapnom charge_full current_now voltage_now; do echo "$f=$(cat /sys/class/power_supply/battery/$f 2>/dev/null)"; done
     echo '@@mfg'; getprop ril.rfcal_date
     echo '@@rot'; settings get system accelerometer_rotation; settings get system user_rotation
     echo '@@force'; wm get-ignore-orientation-request 2>/dev/null
@@ -126,6 +128,12 @@ struct DeviceStatus: Equatable {
         func mah(_ v: Int?) -> Int? { v.flatMap { $0 > 0 ? ($0 > 100_000 ? $0 / 1000 : $0) : nil } }
         s.batteryDesignMah = mah(sys["charge_full_design"])
         s.batteryMaxMah = mah(sys["fg_fullcapnom"]) ?? mah(sys["charge_full"])
+        // 充電功率：電壓（µV）× 電流。電流單位各家不同（標準是 µA，三星是 mA），絕對值 ≥ 20000 當作 µA
+        if s.charging, let rawI = sys["current_now"], let rawV = sys["voltage_now"], rawV > 0 {
+            let mA = abs(rawI) >= 20_000 ? Double(abs(rawI)) / 1000 : Double(abs(rawI))
+            let w = mA / 1000 * Double(rawV) / 1_000_000
+            if w >= 0.1 { s.chargingWatts = w }
+        }
         s.manufactureDate = (sections["mfg"]?.first ?? "").trimmingCharacters(in: .whitespaces)
         s.forceOrientation = (sections["force"] ?? []).contains { $0.contains("true") }
         let rot = sections["rot"] ?? []

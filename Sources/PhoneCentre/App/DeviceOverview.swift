@@ -156,7 +156,7 @@ struct DeviceOverview: View {
         guard status.batteryLevel >= 0 else { return "—" }
         var t = "\(status.batteryLevel)%"
         switch status.batteryStatus {
-        case 2: t += "（充電中）"
+        case 2: t += status.chargingWatts.map { String(format: "（充電中 %.1fW）", $0) } ?? "（充電中）"
         case 5: t += "（已充飽）"
         case 4: t += status.pluggedIn ? "（已插電，未充電）" : ""
         default: if status.pluggedIn { t += "（已插電，未充電）" }
