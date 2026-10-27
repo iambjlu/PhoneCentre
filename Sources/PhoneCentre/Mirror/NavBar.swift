@@ -64,6 +64,13 @@ struct StatusIndicator: View {
         return .white
     }
 
+    /// 電量數字字級：最大 12pt；位數多（100）時縮小，確保寬度不超過環頂端缺口（避免壓到環的圓頭）
+    private var levelFontSize: CGFloat {
+        let digits = CGFloat(String(max(status.batteryLevel, 0)).count)
+        let gapWidth = 2 * (size / 2 - 2) * CGFloat(sin(38 * Double.pi / 180)) - 3.2 - 2
+        return min(12, size * 0.3, gapWidth / (digits * 0.62))
+    }
+
     // 角度：SwiftUI 由 3 點鐘方向順時針量起（270° = 正上方，90° = 正下方）
     private let segments: [(Double, Double)] = [(145, 232), (308, 395)]
 
@@ -109,7 +116,7 @@ struct StatusIndicator: View {
             }
             if status.batteryLevel >= 0 {
                 Text("\(status.batteryLevel)")
-                    .font(.system(size: min(12, size * 0.3), weight: .bold, design: .rounded)).monospacedDigit()
+                    .font(.system(size: levelFontSize, weight: .bold, design: .rounded)).monospacedDigit()
                     .foregroundStyle(status.charging ? Color.green : Color.white)
                     .offset(y: -(size / 2 - 2) + 0.8)   // 壓在環的正中間（數字視覺中心略高於文字框中心）
             }
