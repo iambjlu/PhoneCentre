@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="phonecentre-helper">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/Resources/phonecentre-helper.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>

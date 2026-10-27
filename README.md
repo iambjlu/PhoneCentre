@@ -18,7 +18,6 @@
 - 一鍵鏡像畫面、桌面模式 (Beta)、安裝 APK、重新啟動手機；把檔案拖進來就安裝或存到手機
 
 ### 鏡像畫面與獨立 App 視窗
-![鏡像與獨立視窗](docs/screenshots/mirror-and-app-window.png)
 
 - 低延遲的手機畫面鏡像，滑鼠、觸控板（捲動、雙指縮放）、鍵盤都能操作；支援 Mac 輸入法打中文
 - 手機的聲音可以傳到 Mac 播放，剪貼簿雙向同步
@@ -26,41 +25,51 @@
 - 右側欄有狀態環（電量、Wi-Fi／4G／5G、訊號格）、App 列、導覽列（畫質、輸入法、聲音、截圖、旋轉、黑屏、電源）
 - 模擬定位：在地圖上點一下，手機就使用那個位置
 
+![鏡像與獨立視窗](docs/screenshots/mirror-and-app-window.png)
+
 ### 啟動台
-![啟動台](docs/screenshots/launchpad.png)
 
 - 類似 Mac 新版啟動台：喜好項目、已開啟、所有 App（依英文字母與注音分組，右側索引快速捲動）
 - 可以選擇在獨立視窗或手機主螢幕開啟；右鍵可強制停止、解除安裝、查看 App 資訊
 
+![啟動台](docs/screenshots/launchpad.png)
+
+
 ### 檔案
-![檔案](docs/screenshots/files.png)
 
 - Finder 風格的手機檔案管理：排序、快速查看、重新命名、刪除、新增資料夾
 - 拖進來上傳、拖到 Finder 下載
+- 
+  ![檔案](docs/screenshots/files.png)
 
 ### 相機膠卷
-![相機膠卷](docs/screenshots/camera-roll.png)
 
 - Apple「照片」風格的格狀檢視；「所有照片」一次看完 DCIM 底下所有資料夾
 - 可以只看照片或只看影片
 - ⌘ 點選多選、⇧ 點選範圍選取、⌘A 全選，一次匯出到 Mac
 - 縮圖在手機端產生，只傳小圖，捲動很順
 
+
+![相機膠卷](docs/screenshots/camera-roll.png)
+
 ### 通知、簡訊、通話記錄
-![通知](docs/screenshots/notifications.png)
-![簡訊](docs/screenshots/sms.png)
 
 - 只透過 adb 讀取，**不在手機上安裝任何 App**
 - 資料只保存在這台 Mac（`~/Library/Application Support/PhoneCentre/Data`），可分別設定保存天數或隨時刪除
 - 通知會記錄已清除的項目，點一下就在獨立視窗打開對應的 App
 
-### 用 Mac 的 Touch ID 解鎖手機
-![用 Touch ID 解鎖](docs/screenshots/touch-id-unlock.png)
-![鎖定畫面](docs/screenshots/lock-screen.png)
+![通知](docs/screenshots/notifications.png)
+![簡訊](docs/screenshots/sms.png)
 
-- 偵測到手機在鎖定畫面時，用 Mac 的 Touch ID 驗證後自動填入手機密碼；密碼存在 Mac 的鑰匙圈
+
+### 用 Mac 的 Touch ID 解鎖手機
+
+- 偵測到手機在鎖定畫面時，用 Mac 的 Touch ID 或電腦密碼驗證後自動填入手機密碼；密碼存在 Mac 的鑰匙圈
 - 自動填入期間手機會黑屏，旁邊的人看不到你的密碼或圖形
 - 圖形解鎖是 **Beta**：部分機型（例如沒有螢幕下指紋、圖形位置比較下面的 Galaxy S8 等舊機）可能無法解鎖
+
+![用 Touch ID 解鎖](docs/screenshots/touch-id-unlock.png)
+![鎖定畫面](docs/screenshots/lock-screen.png)
 
 ### 遠端 PhoneCentre (Beta)
 - 連到另一台 Mac 上的 PhoneCentre，直接使用它連接的手機（鏡像、檔案、App 等功能都能用）
