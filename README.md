@@ -41,8 +41,8 @@
 
 - Finder 風格的手機檔案管理：排序、快速查看、重新命名、刪除、新增資料夾
 - 拖進來上傳、拖到 Finder 下載
-- 
-  ![檔案](docs/screenshots/files.png)
+
+![檔案](docs/screenshots/files.png)
 
 ### 相機膠卷
 
