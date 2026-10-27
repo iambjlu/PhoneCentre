@@ -60,7 +60,7 @@
 - 資料只保存在這台 Mac（`~/Library/Application Support/PhoneCentre/Data`），可分別設定保存天數或隨時刪除
 - 通知會記錄已清除的項目，點一下就在獨立視窗打開對應的 App
 
-![通知](docs/screenshots/notifications.png)
+![通知](docs/screenshots/notification.png)
 ![簡訊](docs/screenshots/sms.png)
 
 
