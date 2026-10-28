@@ -4,7 +4,7 @@
 透過 adb 連接手機，用 scrcpy-server 鏡像畫面與遠端操作；另外提供 App 啟動台、檔案管理、相機膠卷、
 通知／簡訊／通話記錄，以及讓手機上的 App 以 Mac 獨立視窗執行。
 
-**Windows PC用戶可以使用[PhoneCentreOnPC](../PhoneCentreOnPC) (Beta)**
+**Windows PC用戶可以使用[PhoneCentreOnPC](https://github.com/iambjlu/PhoneCentreOnPC) (Beta)**
 
 > 這是作者自用的專案，**不保證任何功能在你的手機上可用**，使用前請先閱讀最下方的[免責聲明](#免責聲明)。
 
